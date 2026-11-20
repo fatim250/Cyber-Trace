@@ -1649,3 +1649,113 @@ select:focus-visible {
   .case-detail-list { grid-template-columns: 1fr; }
   .case-detail-list .case-description { grid-column: 1; }
 }
+
+.case-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+  margin: 0 0 15px;
+}
+
+.case-kpi-card {
+  display: grid;
+  min-width: 0;
+  min-height: 105px;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  gap: 8px 11px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(145deg, #0e1827, #0c1522);
+}
+
+.case-kpi-card .metric-icon { grid-row: 1 / 3; }
+.case-kpi-label { align-self: end; color: #a3afbf; font-size: 9px; }
+.case-kpi-card > strong { align-self: start; color: #eff4fa; font-size: 21px; font-weight: 630; line-height: 1.15; }
+.case-kpi-unavailable { color: #e3aaaa !important; font-size: 10px !important; }
+.case-kpi-skeleton { width: 52px; height: 20px; align-self: start; }
+.metric-green { border-color: #355144; background: #14251e; color: #8ec5a6; }
+.case-metrics-error { margin: -5px 0 13px; color: #d6a5a0; font-size: 9px; }
+
+.case-success-notice {
+  margin: 0 0 13px;
+  padding: 9px 11px;
+  border: 1px solid #285241;
+  border-radius: 6px;
+  background: #10231b;
+  color: #9bd0b5;
+  font-size: 10px;
+}
+
+.case-row-actions { display: flex; align-items: center; gap: 10px; }
+.case-row-actions button { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.status-escalated { border-color: #754343; background: #2b191c; color: #f09b91; }
+.status-resolved { border-color: #355144; background: #14251e; color: #8ec5a6; }
+
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px;
+  border: 1px solid #35445a;
+  border-radius: 99px;
+  background: #172235;
+  color: #bac9dc;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+
+.severity-low { border-color: #315343; background: #14231d; color: #95c7aa; }
+.severity-medium { border-color: #42526a; background: #182336; color: #b6c4d6; }
+.severity-high { border-color: #70552e; background: #292216; color: #e4ba70; }
+.severity-critical { border-color: #754343; background: #2b191c; color: #f09b91; }
+
+.case-modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  overflow: auto;
+  place-items: center;
+  padding: 20px;
+  background: #030811cc;
+  backdrop-filter: blur(4px);
+}
+
+.case-modal {
+  width: min(100%, 680px);
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+  padding: 18px;
+  box-shadow: 0 22px 70px #0009;
+}
+
+.case-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.case-modal-heading h2 { margin: 0; color: #e5edf6; font-size: 16px; font-weight: 620; }
+.case-modal-heading p { margin: 5px 0 0; color: #8494a9; font-size: 9px; }
+.case-modal-form { gap: 13px; margin-top: 15px; padding: 15px 0 0; border: 0; border-top: 1px solid #202d3f; }
+
+.case-audit-panel { grid-column: 1 / -1; }
+.case-audit-timeline { display: grid; gap: 0; margin: 14px 0 0; padding: 0; list-style: none; }
+.case-audit-timeline li { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 10px; padding: 0 0 16px; }
+.case-audit-timeline li:not(:last-child)::before { position: absolute; top: 9px; bottom: 0; left: 5px; width: 1px; background: #2b3d51; content: ""; }
+.case-audit-marker { z-index: 1; width: 11px; height: 11px; border: 2px solid #56cde0; border-radius: 50%; background: #0e1827; }
+.case-audit-timeline strong { color: #dbe5ef; font-size: 10px; font-weight: 600; }
+.case-audit-timeline p { margin: 4px 0; color: #8e9db0; font-size: 9px; }
+.case-audit-timeline time { color: #718198; font-size: 8px; }
+.case-audit-empty { margin: 12px 0 0 !important; }
+
+@media (max-width: 900px) {
+  .case-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 540px) {
+  .case-kpi-grid { gap: 8px; }
+  .case-kpi-card { min-height: 90px; gap: 6px 8px; padding: 10px; }
+  .case-kpi-card > strong { font-size: 18px; }
+  .case-modal-backdrop { align-items: end; padding: 0; }
+  .case-modal { width: 100%; max-height: 92vh; padding: 15px; border-radius: 12px 12px 0 0; }
+}

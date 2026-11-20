@@ -3,15 +3,26 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Icon from "./Icon.jsx";
 import WorkspaceLayout from "./WorkspaceLayout.jsx";
-import { createCase, getCase, getCases, updateCase } from "../services/casesApi.js";
+import { createCase, getCase, getCases, getCaseMetrics, updateCase } from "../services/casesApi.js";
 
-const CASE_STATUSES = ["Open", "In Progress", "Under Review", "Closed"];
+const CASE_STATUSES = ["OPEN", "IN_PROGRESS", "ESCALATED", "RESOLVED", "CLOSED"];
+const CASE_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 const EMPTY_FORM = {
   title: "",
   description: "",
-  assignedInvestigator: "",
-  status: "Open",
+  assignedTo: "",
+  reporterName: "",
+  status: "OPEN",
+  severity: "MEDIUM",
 };
+
+function formatLabel(value = "") {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 function formatDate(value, withTime = false) {
   if (!value) return "—";
@@ -23,8 +34,13 @@ function formatDate(value, withTime = false) {
 }
 
 function StatusBadge({ status }) {
-  const modifier = status.toLowerCase().replaceAll(" ", "-");
-  return <span className={`status-badge status-${modifier}`}><i />{status}</span>;
+  const modifier = status.toLowerCase().replaceAll("_", "-");
+  return <span className={`status-badge status-${modifier}`}><i />{formatLabel(status)}</span>;
+}
+
+function SeverityBadge({ severity }) {
+  const modifier = severity.toLowerCase();
+  return <span className={`severity-badge severity-${modifier}`}>{formatLabel(severity)}</span>;
 }
 
 function PageError({ message, onRetry }) {
@@ -39,23 +55,135 @@ function PageError({ message, onRetry }) {
   );
 }
 
+function getInitialCaseValues(caseRecord) {
+  if (!caseRecord) return EMPTY_FORM;
+  return {
+    title: caseRecord.title,
+    description: caseRecord.description ?? "",
+    assignedTo: caseRecord.assignedTo ?? "",
+    reporterName: caseRecord.reporterName ?? "",
+    status: caseRecord.status,
+    severity: caseRecord.severity,
+  };
+}
+
+function CaseFormModal({ caseRecord, onClose, onSaved }) {
+  const editing = Boolean(caseRecord);
+  const [values, setValues] = useState(() => getInitialCaseValues(caseRecord));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !saving) onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  const handleChange = (event) => {
+    setValues((current) => ({ ...current, [event.target.name]: event.target.value }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const saved = editing
+        ? await updateCase(caseRecord.caseNumber, values)
+        : await createCase(values);
+      onSaved(editing ? `${saved.caseNumber} was updated.` : `${saved.caseNumber} was created.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The case could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="case-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
+      }}
+    >
+      <section className="panel case-modal" role="dialog" aria-modal="true" aria-labelledby="case-modal-title">
+        <div className="case-modal-heading">
+          <div>
+            <h2 id="case-modal-title">{editing ? "Edit case" : "Create investigation case"}</h2>
+            <p>{editing ? caseRecord.caseNumber : "Save a new case to the workspace database."}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close dialog" disabled={saving} onClick={onClose}>×</button>
+        </div>
+        {error && <PageError message={error} />}
+        <form className="case-form case-modal-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Case title <b aria-hidden="true">*</b></span>
+            <input name="title" value={values.title} onChange={handleChange} required minLength={1} maxLength={200} autoComplete="off" autoFocus />
+          </label>
+          <label>
+            <span>Description</span>
+            <textarea name="description" value={values.description} onChange={handleChange} maxLength={10000} rows={4} />
+          </label>
+          <div className="case-form-row">
+            <label>
+              <span>Assigned to</span>
+              <input name="assignedTo" value={values.assignedTo} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+            </label>
+            <label>
+              <span>Reporter name</span>
+              <input name="reporterName" value={values.reporterName} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+            </label>
+          </div>
+          <div className="case-form-row">
+            <label>
+              <span>Severity</span>
+              <select name="severity" value={values.severity} onChange={handleChange}>
+                {CASE_SEVERITIES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select name="status" value={values.status} onChange={handleChange}>
+                {CASE_STATUSES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="case-form-actions">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={saving}>
+              {saving ? "Saving…" : editing ? "Save changes" : "Create case"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function CaseListPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
+  const [severity, setSeverity] = useState("");
   const [skip, setSkip] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+  const [metricsError, setMetricsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [modalCase, setModalCase] = useState(undefined);
+  const [notice, setNotice] = useState("");
   const pageSize = 50;
 
   useEffect(() => {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
+    const load = () => {
       setLoading(true);
       setError("");
-      getCases({ query, status, skip, limit: pageSize, signal: controller.signal })
+      getCases({ query, status, severity, skip, limit: pageSize, signal: controller.signal })
         .then(setResult)
         .catch((cause) => {
           if (controller.signal.aborted) return;
@@ -65,13 +193,24 @@ function CaseListPage() {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
-    }, query ? 250 : 0);
+      getCaseMetrics({ signal: controller.signal })
+        .then((summary) => {
+          setMetrics(summary);
+          setMetricsError("");
+        })
+        .catch((cause) => {
+          if (controller.signal.aborted) return;
+          setMetrics(null);
+          setMetricsError(cause instanceof Error ? cause.message : "Metrics are unavailable.");
+        });
+    };
 
+    const timer = window.setTimeout(load, query ? 250 : 0);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, status, skip, reloadKey]);
+  }, [query, status, severity, skip, reloadKey]);
 
   const handleSearch = (value) => {
     setQuery(value);
@@ -79,6 +218,10 @@ function CaseListPage() {
   };
   const handleStatus = (value) => {
     setStatus(value);
+    setSkip(0);
+  };
+  const handleSeverity = (value) => {
+    setSeverity(value);
     setSkip(0);
   };
   const currentPage = Math.floor(skip / pageSize) + 1;
@@ -99,8 +242,29 @@ function CaseListPage() {
           <h1>Investigation cases</h1>
           <p>Create and manage case records stored in the configured CyberTrace database.</p>
         </div>
-        <Link className="primary-button" to="/cases/new"><Icon name="plus" size={15} /> New case</Link>
+        <button className="primary-button" type="button" onClick={() => setModalCase(null)}>
+          <Icon name="plus" size={15} /> New case
+        </button>
       </div>
+
+      <section className="case-kpi-grid" aria-label="Case metrics" aria-busy={loading}>
+        {[
+          { key: "totalCases", label: "Total cases", tone: "cyan", icon: "cases" },
+          { key: "openCases", label: "Open cases", tone: "blue", icon: "timeline" },
+          { key: "criticalCases", label: "Critical cases", tone: "amber", icon: "findings" },
+          { key: "resolvedCases", label: "Resolved cases", tone: "green", icon: "integrity" },
+        ].map((item) => (
+          <article className="case-kpi-card" key={item.key}>
+            <span className={`metric-icon metric-${item.tone}`}><Icon name={item.icon} size={16} /></span>
+            <span className="case-kpi-label">{item.label}</span>
+            {metricsError ? <strong className="case-kpi-unavailable" title={metricsError}>Unavailable</strong>
+              : metrics ? <strong>{metrics[item.key].toLocaleString()}</strong>
+                : <span className="skeleton case-kpi-skeleton" aria-label="Loading case metric" />}
+          </article>
+        ))}
+      </section>
+      {metricsError && <p className="case-metrics-error" role="status">Case metrics are unavailable: {metricsError}</p>}
+      {notice && <div className="case-success-notice" role="status">{notice}</div>}
 
       <section className="panel case-list-panel" aria-label="Investigation cases">
         <div className="case-list-toolbar">
@@ -113,7 +277,14 @@ function CaseListPage() {
               <span className="sr-only">Filter cases by status</span>
               <select value={status} onChange={(event) => handleStatus(event.target.value)} aria-label="Filter cases by status">
                 <option value="">All statuses</option>
-                {CASE_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+                {CASE_STATUSES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
+              </select>
+            </label>
+            <label className="filter-control">
+              <span className="sr-only">Filter cases by severity</span>
+              <select value={severity} onChange={(event) => handleSeverity(event.target.value)} aria-label="Filter cases by severity">
+                <option value="">All severities</option>
+                {CASE_SEVERITIES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
               </select>
             </label>
             <button className="secondary-button" type="button" onClick={() => setReloadKey((key) => key + 1)} disabled={loading}>
@@ -127,11 +298,15 @@ function CaseListPage() {
         ) : result?.items.length === 0 ? (
           <div className="case-empty">
             <span className="empty-state-mark"><Icon name="cases" size={18} /></span>
-            <strong>{result.total === 0 && !query && !status ? "No investigation cases yet" : "No cases match these filters"}</strong>
-            <p>{result.total === 0 && !query && !status
+            <strong>{result.total === 0 && !query && !status && !severity ? "No investigation cases yet" : "No cases match these filters"}</strong>
+            <p>{result.total === 0 && !query && !status && !severity
               ? "Create your first investigation to get started."
               : "Try another search term or status filter."}</p>
-            {result.total === 0 && !query && !status && <Link className="secondary-button" to="/cases/new">Create your first investigation</Link>}
+            {result.total === 0 && !query && !status && !severity && (
+              <button className="secondary-button" type="button" onClick={() => setModalCase(null)}>
+                Create your first investigation
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -141,7 +316,8 @@ function CaseListPage() {
                   <tr>
                     <th scope="col">CASE ID</th>
                     <th scope="col">TITLE</th>
-                    <th scope="col">ASSIGNED INVESTIGATOR</th>
+                    <th scope="col">ASSIGNED TO</th>
+                    <th scope="col">SEVERITY</th>
                     <th scope="col">STATUS</th>
                     <th scope="col">CREATED</th>
                     <th scope="col">LAST UPDATED</th>
@@ -151,13 +327,17 @@ function CaseListPage() {
                 <tbody>
                   {result.items.map((item) => (
                     <tr key={item.id}>
-                      <td><Link className="case-id case-title-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.caseNumber}</Link></td>
-                      <td><Link className="case-title case-title-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.title}</Link></td>
-                      <td>{item.assignedInvestigator || "Unassigned"}</td>
+                      <td><Link className="case-id case-title-link" to={`/cases/${encodeURIComponent(item.id)}`}>{item.caseNumber}</Link></td>
+                      <td><Link className="case-title case-title-link" to={`/cases/${encodeURIComponent(item.id)}`}>{item.title}</Link></td>
+                      <td>{item.assignedTo || "Unassigned"}</td>
+                      <td><SeverityBadge severity={item.severity} /></td>
                       <td><StatusBadge status={item.status} /></td>
                       <td>{formatDate(item.createdAt)}</td>
                       <td>{formatDate(item.updatedAt)}</td>
-                      <td><Link className="table-action-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>Details</Link></td>
+                      <td className="case-row-actions">
+                        <Link className="table-action-link" to={`/cases/${encodeURIComponent(item.id)}`}>Details</Link>
+                        <button className="table-action-link" type="button" onClick={() => setModalCase(item)}>Edit</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -174,6 +354,17 @@ function CaseListPage() {
           </>
         )}
       </section>
+      {modalCase !== undefined && (
+        <CaseFormModal
+          caseRecord={modalCase}
+          onClose={() => setModalCase(undefined)}
+          onSaved={(message) => {
+            setModalCase(undefined);
+            setNotice(message);
+            setReloadKey((key) => key + 1);
+          }}
+        />
+      )}
     </WorkspaceLayout>
   );
 }
@@ -197,8 +388,10 @@ function CaseFormPage({ editing = false }) {
         setValues({
           title: item.title,
           description: item.description ?? "",
-          assignedInvestigator: item.assignedInvestigator ?? "",
+          assignedTo: item.assignedTo ?? "",
+          reporterName: item.reporterName ?? "",
           status: item.status,
+          severity: item.severity,
         });
       })
       .catch((cause) => {
@@ -257,18 +450,29 @@ function CaseFormPage({ editing = false }) {
           </label>
           <label>
             <span>Description</span>
-            <textarea name="description" value={values.description} onChange={handleChange} maxLength={5000} rows={5} />
+            <textarea name="description" value={values.description} onChange={handleChange} maxLength={10000} rows={5} />
           </label>
           <div className="case-form-row">
             <label>
-              <span>Assigned investigator</span>
-              <input name="assignedInvestigator" value={values.assignedInvestigator} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
-              <small>Enter the investigator’s name. User-account linking is not configured in this project.</small>
+              <span>Assigned to</span>
+              <input name="assignedTo" value={values.assignedTo} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+            </label>
+            <label>
+              <span>Reporter name</span>
+              <input name="reporterName" value={values.reporterName} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+            </label>
+          </div>
+          <div className="case-form-row">
+            <label>
+              <span>Severity</span>
+              <select name="severity" value={values.severity} onChange={handleChange}>
+                {CASE_SEVERITIES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
+              </select>
             </label>
             <label>
               <span>Status</span>
               <select name="status" value={values.status} onChange={handleChange}>
-                {CASE_STATUSES.map((item) => <option key={item}>{item}</option>)}
+                {CASE_STATUSES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
               </select>
             </label>
           </div>
@@ -342,7 +546,7 @@ function CaseDetailPage() {
           <h1>{loading ? "Case details" : record?.title ?? "Case not found"}</h1>
           <p>{record ? `Case ${record.caseNumber} · Created ${formatDate(record.createdAt, true)}` : "Review and update a saved case record."}</p>
         </div>
-        {record && <Link className="primary-button" to={`/cases/${encodeURIComponent(record.caseNumber)}/edit`}>Edit case</Link>}
+        {record && <Link className="primary-button" to={`/cases/${encodeURIComponent(record.id)}/edit`}>Edit case</Link>}
       </div>
 
       {error && <PageError message={error} onRetry={() => setReloadKey((key) => key + 1)} />}
@@ -353,7 +557,9 @@ function CaseDetailPage() {
             <dl className="case-detail-list">
               <div><dt>Case ID</dt><dd>{record.caseNumber}</dd></div>
               <div><dt>Title</dt><dd>{record.title}</dd></div>
-              <div><dt>Assigned investigator</dt><dd>{record.assignedInvestigator || "Unassigned"}</dd></div>
+              <div><dt>Assigned to</dt><dd>{record.assignedTo || "Unassigned"}</dd></div>
+              <div><dt>Reporter</dt><dd>{record.reporterName || "Not specified"}</dd></div>
+              <div><dt>Severity</dt><dd><SeverityBadge severity={record.severity} /></dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={record.status} /></dd></div>
               <div><dt>Created</dt><dd>{formatDate(record.createdAt, true)}</dd></div>
               <div><dt>Last updated</dt><dd>{formatDate(record.updatedAt, true)}</dd></div>
@@ -375,6 +581,24 @@ function CaseDetailPage() {
               </button>
             </form>
             <Link className="case-back-link" to="/cases">Back to all cases</Link>
+          </section>
+          <section className="panel case-detail-panel case-audit-panel">
+            <h2>Case activity</h2>
+            <p>Changes recorded in the case audit history.</p>
+            {record.auditHistory?.length ? (
+              <ol className="case-audit-timeline">
+                {record.auditHistory.map((entry) => (
+                  <li key={entry.id}>
+                    <span className="case-audit-marker" />
+                    <div>
+                      <strong>{formatLabel(entry.action.replace("CASE_", ""))}</strong>
+                      <p>Actor: {entry.actor}</p>
+                      <time dateTime={entry.createdAt}>{formatDate(entry.createdAt, true)}</time>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="case-audit-empty">No case activity has been recorded.</p>}
           </section>
         </div>
       )}

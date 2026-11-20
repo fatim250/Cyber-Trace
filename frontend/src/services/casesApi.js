@@ -1,6 +1,8 @@
 const CASES_URL = "/api/v1/cases";
 
 function getErrorMessage(payload, statusCode) {
+  const apiError = payload?.error;
+  if (typeof apiError?.message === "string") return apiError.message;
   const detail = payload?.detail;
   if (statusCode === 404 && detail === "Not Found") {
     return "Cases API route not found (HTTP 404). Restart the CyberTrace backend and confirm /api/v1/cases is registered.";
@@ -65,13 +67,23 @@ function validateCase(value) {
   return value;
 }
 
-export async function getCases({ query = "", status = "", skip = 0, limit = 50, signal } = {}) {
+export async function getCaseMetrics({ signal } = {}) {
+  const result = await request("/metrics", { signal });
+  const fields = ["totalCases", "openCases", "criticalCases", "resolvedCases"];
+  if (!fields.every((field) => Number.isInteger(result?.[field]) && result[field] >= 0)) {
+    throw new Error("The case metrics API returned an unsupported format.");
+  }
+  return result;
+}
+
+export async function getCases({ query = "", status = "", severity = "", skip = 0, limit = 50, signal } = {}) {
   const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
   if (query.trim()) params.set("q", query.trim());
   if (status) params.set("status", status);
+  if (severity) params.set("severity", severity);
 
   const result = await request(`?${params.toString()}`, { signal });
-  if (!Array.isArray(result.items) || !Number.isInteger(result.total)) {
+  if (!Array.isArray(result.items) || !Number.isInteger(result.total) || !Number.isInteger(result.page) || !Number.isInteger(result.size)) {
     throw new Error("The case API returned a list in an unsupported format.");
   }
   return { ...result, items: result.items.map(validateCase) };

@@ -22,9 +22,15 @@ labeled demonstration records unless an API base URL is configured.
 
 ## Development setup
 
-1. Copy `.env.example` to `backend/.env` and set `DATABASE_URL` to a
-   development MySQL database. Do not commit credentials.
-2. Install and start the backend:
+1. Copy `.env.example` to the root `.env` and `backend/.env`. These are
+   local-development credentials; change them before using sensitive data.
+2. Start MySQL 8 and wait for its health check:
+
+   ```powershell
+   docker compose up -d --wait mysql
+   ```
+
+3. Install dependencies, apply migrations, and start the backend:
 
    ```powershell
    cd backend
@@ -33,7 +39,7 @@ labeled demonstration records unless an API base URL is configured.
    python -m uvicorn app.main:app --reload
    ```
 
-3. In another terminal, install and start the frontend:
+4. In another terminal, install and start the frontend:
 
    ```powershell
    cd frontend
@@ -57,22 +63,26 @@ Available endpoints:
 - `GET /health` — backend liveness.
 - `GET /health/ready` — checks database readiness.
 - `POST /api/v1/cases` — create a case.
-- `GET /api/v1/cases` — list cases, with optional `q`, `status`, `skip`, and
-  `limit` query parameters.
-- `GET /api/v1/cases/{case_number}` — read case details.
-- `PATCH /api/v1/cases/{case_number}` — edit case information and/or status.
+- `GET /api/v1/cases` — list/search/filter cases with `q`, `status`, `severity`,
+  `page`, and `size` (legacy `skip`/`limit` are also accepted).
+- `GET /api/v1/cases/metrics` — total, open, critical, and resolved counts.
+- `GET /api/v1/cases/{id}` — read case details and audit history. The path also
+  accepts the generated case number.
+- `PATCH /api/v1/cases/{id}` — edit case information and/or status.
+- `DELETE /api/v1/cases/{id}` — soft-delete a case while retaining its audit history.
 
-Case numbers are generated from the database ID (for example, `CT-000001`).
-The assigned investigator field is currently a persisted name, not a link to
-an authenticated user account; this project does not yet include investigator
-identity or authentication. Do not expose this development API to untrusted
-networks until authentication and authorization are implemented.
+Case numbers are generated in the form `CT-YYYY-XXXXXXXX`. Existing records
+are migrated to `CT-YYYY-NNNN`, and their previous assigned-investigator value
+is retained as `assignedTo`. The audit actor is currently `system` because
+authentication and investigator accounts are not implemented. Do not expose
+this development API to untrusted networks until authentication and
+authorization are implemented.
 
 To verify a running backend, check `http://127.0.0.1:8000/health`, then
 `http://127.0.0.1:8000/health/ready`; the second endpoint requires a configured
-and reachable database. To run the backend tests, use `python -m pytest` from `backend`. The API tests
-use an isolated in-memory SQLite database; actual MySQL connectivity requires
-a configured and reachable MySQL server.
+and reachable database. To run the backend tests, use `python -m pytest` from
+`backend`. API tests use an isolated in-memory SQLite database; the Alembic
+migrations also support SQLite tests, but deployment uses MySQL.
 
 ## Dashboard data source
 

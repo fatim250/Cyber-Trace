@@ -1,10 +1,10 @@
 from collections.abc import Generator
 from functools import lru_cache
 
+from fastapi import HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
-from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 
