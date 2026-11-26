@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { useAssistant } from "./AssistantContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 import Icon from "./Icon.jsx";
 import WorkspaceLayout from "./WorkspaceLayout.jsx";
 import { getCases } from "../services/casesApi.js";
@@ -41,6 +42,8 @@ function IntegrityStatus({ item }) {
 export function EvidenceWorkspace({ defaultTab = "repository" }) {
   const location = useLocation();
   const { openAssistant } = useAssistant();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
 
   const activeTab =
     location.pathname.includes("/integrity")
@@ -236,9 +239,11 @@ export function EvidenceWorkspace({ defaultTab = "repository" }) {
           >
             <Icon name="assistant" size={15} /> AI Audit
           </button>
-          <button type="button" className="primary-button" onClick={() => setShowAdd(true)}>
-            <Icon name="plus" size={15} /> Register evidence
-          </button>
+          {canWrite && (
+            <button type="button" className="primary-button" onClick={() => setShowAdd(true)}>
+              <Icon name="plus" size={15} /> Register evidence
+            </button>
+          )}
         </div>
       </div>
 
@@ -344,26 +349,32 @@ export function EvidenceWorkspace({ defaultTab = "repository" }) {
                         </td>
                         <td><IntegrityStatus item={item} /></td>
                         <td className="case-row-actions">
-                          <button
-                            type="button"
-                            className="table-action-link"
-                            onClick={() => {
-                              setVerifyItem(item);
-                              setObservedInput(item.observedSha256 || "");
-                            }}
-                          >
-                            Verify SHA-256
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action-link"
-                            onClick={() => {
-                              setCustodyItem(item);
-                              setCustodyForm({ action: "Transferred", custodian: "", notes: "" });
-                            }}
-                          >
-                            Custody
-                          </button>
+                          {canWrite ? (
+                            <>
+                              <button
+                                type="button"
+                                className="table-action-link"
+                                onClick={() => {
+                                  setVerifyItem(item);
+                                  setObservedInput(item.observedSha256 || "");
+                                }}
+                              >
+                                Verify SHA-256
+                              </button>
+                              <button
+                                type="button"
+                                className="table-action-link"
+                                onClick={() => {
+                                  setCustodyItem(item);
+                                  setCustodyForm({ action: "Transferred", custodian: "", notes: "" });
+                                }}
+                              >
+                                Custody
+                              </button>
+                            </>
+                          ) : (
+                            <span className="table-subtext">Read-only</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -387,23 +398,27 @@ export function EvidenceWorkspace({ defaultTab = "repository" }) {
                     </p>
                     <div className="mobile-card-actions">
                       <Link className="secondary-button" to={`/cases/${item.caseNumber}`}>{item.caseNumber}</Link>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => {
-                          setVerifyItem(item);
-                          setObservedInput(item.observedSha256 || "");
-                        }}
-                      >
-                        Verify
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => setCustodyItem(item)}
-                      >
-                        Custody
-                      </button>
+                      {canWrite && (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              setVerifyItem(item);
+                              setObservedInput(item.observedSha256 || "");
+                            }}
+                          >
+                            Verify
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => setCustodyItem(item)}
+                          >
+                            Custody
+                          </button>
+                        </>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -420,13 +435,15 @@ export function EvidenceWorkspace({ defaultTab = "repository" }) {
                   <h2>{item.id} · {item.name}</h2>
                   <p>{item.caseNumber} · {item.artifactType} · {item.sourceHost}</p>
                 </div>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setCustodyItem(item)}
-                >
-                  <Icon name="plus" size={14} /> Log handoff
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setCustodyItem(item)}
+                  >
+                    <Icon name="plus" size={14} /> Log handoff
+                  </button>
+                )}
               </div>
               <ol className="case-audit-timeline">
                 {(item.custodyChain || []).map((entry) => (

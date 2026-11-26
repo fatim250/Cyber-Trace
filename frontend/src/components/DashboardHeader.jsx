@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAssistant } from "./AssistantContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 import Icon from "./Icon.jsx";
 
 function getInitials(name = "") {
@@ -27,10 +28,12 @@ export default function DashboardHeader({
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { openAssistant, activeAnalyst } = useAssistant();
+  const { openAssistant } = useAssistant();
+  const { profile, signOut } = useAuth();
 
-  const displayName = currentUser?.displayName || activeAnalyst || "Nadia Vance";
-  const role = currentUser?.role || "DFIR Engineer";
+  const displayName = profile?.displayName || currentUser?.displayName || "Investigator";
+  const role = profile?.rbacRole || currentUser?.role || "Analyst";
+  const orgName = profile?.organizationName || currentUser?.organizationName || "CyberTrace";
 
   return (
     <header className="topbar">
@@ -44,7 +47,7 @@ export default function DashboardHeader({
           <Icon name="menu" size={19} />
         </button>
         <div className="breadcrumb">
-          <span>CyberTrace</span>
+          <span>{orgName}</span>
           <Icon name="chevron" size={14} />
           <strong>{pageTitle}</strong>
         </div>
@@ -141,11 +144,23 @@ export default function DashboardHeader({
           {profileOpen && (
             <div className="header-popover profile-popover">
               <strong>{displayName}</strong>
-              <p>{role}</p>
-              <small>Actions and audit trails are attributed to this profile.</small>
-              <Link className="popover-link" to="/settings" onClick={() => setProfileOpen(false)}>
-                Switch analyst profile
-              </Link>
+              <p>{role} · {orgName}</p>
+              {profile?.email && <small className="mono-cell">{profile.email}</small>}
+              <div className="popover-actions">
+                <Link className="popover-link" to="/settings" onClick={() => setProfileOpen(false)}>
+                  Workspace settings
+                </Link>
+                <button
+                  type="button"
+                  className="popover-signout"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    signOut();
+                  }}
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>

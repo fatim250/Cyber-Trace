@@ -7,14 +7,23 @@
     "frontend"
   ],
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node server.ts",
     "build:frontend": "npm --workspace=frontend run build",
     "build": "npm run build:frontend",
-    "start": "NODE_ENV=production node server.js",
-    "lint": "node --check server.js && node --check server/store.js && node --check server/assistant.js"
+    "start": "node server.ts",
+    "lint": "node --check server.ts && node --check src/app.ts && node --check src/db/schema.ts && node --check src/db/repository.ts && node --check src/middleware/auth.ts && node --check src/auth/rbac.ts && node --check src/services/iocExport.ts && node --check server/assistant.js",
+    "test": "node --test server/tests/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
-    "express": "^4.21.2"
+    "@types/pg": "^8.23.1",
+    "dotenv": "^18.0.10",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
+    "express": "^4.21.2",
+    "firebase": "^13.4.0",
+    "firebase-admin": "^14.5.1",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15"
   }
 }

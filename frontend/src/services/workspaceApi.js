@@ -1,21 +1,6 @@
-const ANALYST_STORAGE_KEY = "cybertrace.activeAnalyst";
+import { buildAuthHeaders } from "./authToken.js";
+
 const PREFS_STORAGE_KEY = "cybertrace.workspacePrefs";
-
-export function getActiveAnalyst() {
-  try {
-    return window.localStorage.getItem(ANALYST_STORAGE_KEY) || "Nadia Vance";
-  } catch {
-    return "Nadia Vance";
-  }
-}
-
-export function setActiveAnalyst(name) {
-  try {
-    window.localStorage.setItem(ANALYST_STORAGE_KEY, name);
-  } catch {
-    // Ignore storage errors in restricted environments
-  }
-}
 
 export function getWorkspacePrefs() {
   try {
@@ -36,14 +21,13 @@ export function saveWorkspacePrefs(prefs) {
 }
 
 async function apiRequest(url, options = {}) {
+  const headers = await buildAuthHeaders({
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+    ...options.headers,
+  });
   const response = await fetch(url, {
     ...options,
-    headers: {
-      Accept: "application/json",
-      "X-CyberTrace-Actor": getActiveAnalyst(),
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...options.headers,
-    },
+    headers,
   });
 
   if (response.status === 204) return null;
@@ -100,6 +84,11 @@ export function extractLogIndicators(rawText = "") {
   return indicators;
 }
 
+export const getAuthMe = ({ signal } = {}) => apiRequest("/api/v1/auth/me", { signal });
+
+export const updateOrganizationName = (name) =>
+  apiRequest("/api/v1/organization", { method: "PATCH", body: JSON.stringify({ name }) });
+
 export const getEvidence = ({ caseNumber = "", query = "", signal } = {}) => {
   const params = new URLSearchParams();
   if (caseNumber) params.set("caseNumber", caseNumber);
@@ -141,12 +130,56 @@ export const updateEvent = (id, data) =>
     body: JSON.stringify(data),
   });
 
-export const getIocs = ({ signal } = {}) => apiRequest("/api/v1/iocs", { signal });
+export const getIocs = ({ caseNumber = "", signal } = {}) => {
+  const params = new URLSearchParams();
+  if (caseNumber) params.set("caseNumber", caseNumber);
+  const qs = params.toString();
+  return apiRequest(`/api/v1/iocs${qs ? `?${qs}` : ""}`, { signal });
+};
+
+export async function exportIocs({ format = "stix", caseNumber = "" } = {}) {
+  const params = new URLSearchParams({ format });
+  if (caseNumber) params.set("caseNumber", caseNumber);
+  const headers = await buildAuthHeaders();
+  const response = await fetch(`/api/v1/iocs/export?${params.toString()}`, { headers });
+  if (!response.ok) {
+    let message = `IOC export failed (HTTP ${response.status}).`;
+    try {
+      const payload = await response.json();
+      if (payload?.error?.message) message = payload.error.message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  const text = await response.text();
+  const scopeSlug = caseNumber ? caseNumber.toLowerCase() : "workspace";
+  const filename =
+    format === "misp"
+      ? `cybertrace-${scopeSlug}-misp.json`
+      : `cybertrace-${scopeSlug}-stix21.json`;
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
 
 export const getTeam = ({ signal } = {}) => apiRequest("/api/v1/team", { signal });
 
 export const addTeamMember = (data) =>
   apiRequest("/api/v1/team", { method: "POST", body: JSON.stringify(data) });
+
+export const updateTeamMember = (memberCode, data) =>
+  apiRequest(`/api/v1/team/${encodeURIComponent(memberCode)}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
 
 export const getAuditLogs = ({ query = "", action = "", signal } = {}) => {
   const params = new URLSearchParams();
@@ -160,13 +193,13 @@ export const getCaseReport = (caseId, { signal } = {}) =>
   apiRequest(`/api/v1/reports/${encodeURIComponent(caseId)}`, { signal });
 
 export async function streamAssistantChat({ messages, caseId, extraContext, onChunk, signal }) {
+  const headers = await buildAuthHeaders({
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  });
   const response = await fetch("/api/v1/assistant/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      "X-CyberTrace-Actor": getActiveAnalyst(),
-    },
+    headers,
     body: JSON.stringify({ messages, caseId, extraContext }),
     signal,
   });
@@ -194,9 +227,7 @@ export async function streamAssistantChat({ messages, caseId, extraContext, onCh
     buffer = lines.pop() ?? "";
 
     for (const block of lines) {
-      const dataLine = block
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
+      const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
       if (!dataLine) continue;
       const parsed = JSON.parse(dataLine.slice(6));
       if (parsed.error) throw new Error(parsed.error);

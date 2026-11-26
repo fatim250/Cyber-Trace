@@ -1,4 +1,4 @@
-import { getActiveAnalyst } from "./workspaceApi.js";
+import { buildAuthHeaders } from "./authToken.js";
 
 const CASES_URL = "/api/v1/cases";
 
@@ -23,14 +23,13 @@ function getErrorMessage(payload, statusCode) {
 async function request(path = "", options = {}) {
   let response;
   try {
+    const headers = await buildAuthHeaders({
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    });
     response = await fetch(`${CASES_URL}${path}`, {
       ...options,
-      headers: {
-        Accept: "application/json",
-        "X-CyberTrace-Actor": getActiveAnalyst(),
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...options.headers,
-      },
+      headers,
     });
   } catch (error) {
     if (options.signal?.aborted) throw error;
@@ -90,7 +89,12 @@ export async function getCases({ query = "", status = "", severity = "", skip = 
   if (severity) params.set("severity", severity);
 
   const result = await request(`?${params.toString()}`, { signal });
-  if (!Array.isArray(result.items) || !Number.isInteger(result.total) || !Number.isInteger(result.page) || !Number.isInteger(result.size)) {
+  if (
+    !Array.isArray(result.items) ||
+    !Number.isInteger(result.total) ||
+    !Number.isInteger(result.page) ||
+    !Number.isInteger(result.size)
+  ) {
     throw new Error("The case API returned a list in an unsupported format.");
   }
   return { ...result, items: result.items.map(validateCase) };

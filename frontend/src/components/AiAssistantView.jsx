@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAssistant, WELCOME_MESSAGE } from "./AssistantContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 import Icon from "./Icon.jsx";
 import { getCases } from "../services/casesApi.js";
 import {
@@ -75,7 +76,18 @@ function CodeBlock({ language, code }) {
   );
 }
 
-export function AssistantMessageBody({ content }) {
+export function AssistantMessageBody({ content, isStreamingEmpty = false }) {
+  if (isStreamingEmpty) {
+    return (
+      <div className="ai-typing-indicator" aria-label="Analyzing investigation context">
+        <span />
+        <span />
+        <span />
+        <small>Analyzing investigation telemetry…</small>
+      </div>
+    );
+  }
+
   const lines = content.split("\n");
   const blocks = [];
   let listItems = [];
@@ -173,6 +185,9 @@ function formatMessageTime(ts) {
 }
 
 export default function AiAssistantView({ variant = "drawer", active = true, onOpenFullWorkspace }) {
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
+
   const {
     caseId,
     setCaseId,
@@ -185,6 +200,11 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
     activeTab,
     setActiveTab,
     activeAnalyst,
+    threads,
+    activeThreadId,
+    createNewThread,
+    selectThread,
+    deleteThread,
     messages,
     setMessages,
     triageMode,
@@ -316,9 +336,9 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
     });
   }, [active, autoSendRequest, streaming, clearAutoSend, sendMessage, caseId, extraContext]);
 
-  const handleResetChat = () => {
+  const handleNewThread = () => {
     if (streaming) abortRef.current?.abort();
-    setMessages([WELCOME_MESSAGE]);
+    createNewThread(caseId);
     setError("");
   };
 
@@ -333,6 +353,7 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
   };
 
   const handleSaveToTimeline = async (id, text) => {
+    if (!canWrite) return;
     const targetCase = caseId || cases[0]?.caseNumber;
     if (!targetCase) {
       setError("Select an investigation case first to save this finding.");
@@ -398,7 +419,7 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
   };
 
   const handleSaveTriageToTimeline = async () => {
-    if (!triageResult) return;
+    if (!triageResult || !canWrite) return;
     const targetCase = caseId || cases[0]?.caseNumber;
     if (!targetCase) {
       setError("Select an investigation case first to save this triage finding.");
@@ -454,21 +475,35 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
           </button>
         </div>
         {aiStatus.configured !== null && (
-          <span className={`ai-conn-pill ${aiStatus.configured ? "is-ready" : "is-offline"}`}>
-            {aiStatus.configured ? "Connected" : "Setup needed"}
+          <span className={`ai-conn-meta ${aiStatus.configured ? "is-ready" : "is-offline"}`}>
+            {aiStatus.configured ? "AI Ready" : "AI Setup Needed"}
           </span>
         )}
       </div>
 
       <div className="ai-console-toolbar-right">
+        {!isPage && threads.length > 0 && activeTab === "chat" && (
+          <select
+            className="ai-thread-select"
+            aria-label="Select saved AI thread"
+            value={activeThreadId}
+            onChange={(e) => selectThread(e.target.value)}
+          >
+            {threads.map((th) => (
+              <option key={th.id} value={th.id}>
+                {th.title}
+              </option>
+            ))}
+          </select>
+        )}
         {!isPage && onOpenFullWorkspace && (
           <button type="button" className="secondary-button ai-reset-btn" onClick={onOpenFullWorkspace}>
             <Icon name="expand" size={14} /> Open workbench
           </button>
         )}
-        {activeTab === "chat" && messages.length > 1 && (
-          <button className="secondary-button ai-reset-btn" type="button" onClick={handleResetChat}>
-            New session
+        {activeTab === "chat" && (
+          <button className="secondary-button ai-reset-btn" type="button" onClick={handleNewThread}>
+            <Icon name="plus" size={13} /> New thread
           </button>
         )}
       </div>
@@ -569,18 +604,23 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
                         <Icon name={copiedId === msg.id ? "check" : "copy"} size={14} />
                         <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveToTimeline(msg.id, msg.content)}
-                        title="Save as analytical finding in case timeline"
-                      >
-                        <Icon name={savedId === msg.id ? "check" : "plus"} size={14} />
-                        <span>{savedId === msg.id ? "Saved" : "Save finding"}</span>
-                      </button>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveToTimeline(msg.id, msg.content)}
+                          title="Save as analytical finding in case timeline"
+                        >
+                          <Icon name={savedId === msg.id ? "check" : "plus"} size={14} />
+                          <span>{savedId === msg.id ? "Saved" : "Save finding"}</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-                <AssistantMessageBody content={msg.content || (streaming ? "Analyzing investigation context…" : "")} />
+                <AssistantMessageBody
+                  content={msg.content}
+                  isStreamingEmpty={!msg.content && streaming && msg.role === "assistant"}
+                />
               </article>
             ))}
 
@@ -719,14 +759,16 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
           {triageResult && (
             <div className="ai-triage-results">
               <div className="ai-triage-actions-bar">
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={handleSaveTriageToTimeline}
-                >
-                  <Icon name={triageSaved ? "check" : "plus"} size={14} />
-                  {triageSaved ? "Saved to timeline & IOCs" : "Save triage & IOCs to timeline"}
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleSaveTriageToTimeline}
+                  >
+                    <Icon name={triageSaved ? "check" : "plus"} size={14} />
+                    {triageSaved ? "Saved to timeline & IOCs" : "Save triage & IOCs to timeline"}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondary-button"
@@ -800,6 +842,47 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
         <section className="panel ai-rail-panel">
           <div className="case-list-toolbar">
             <div>
+              <h2>Saved threads ({threads.length})</h2>
+              <p>Switch or start a separate forensic conversation.</p>
+            </div>
+            <button type="button" className="table-action-link" onClick={handleNewThread}>
+              + New
+            </button>
+          </div>
+          <div className="ai-thread-list">
+            {threads.map((th) => {
+              const isSelected = th.id === activeThreadId;
+              return (
+                <div key={th.id} className={`ai-thread-row${isSelected ? " is-active" : ""}`}>
+                  <button
+                    type="button"
+                    className="ai-thread-btn"
+                    onClick={() => selectThread(th.id)}
+                  >
+                    <strong>{th.title}</strong>
+                    <span>
+                      {th.caseId || "All cases"} · {Math.max(0, th.messages.length - 1)} msg{th.messages.length - 1 === 1 ? "" : "s"}
+                    </span>
+                  </button>
+                  {threads.length > 1 && (
+                    <button
+                      type="button"
+                      className="ai-thread-delete"
+                      aria-label={`Delete thread ${th.title}`}
+                      onClick={() => deleteThread(th.id)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="panel ai-rail-panel">
+          <div className="case-list-toolbar">
+            <div>
               <h2>Investigation context</h2>
               <p>Scope AI reasoning to a specific incident or all telemetry.</p>
             </div>
@@ -855,7 +938,7 @@ export default function AiAssistantView({ variant = "drawer", active = true, onO
           <div className="ai-rail-body">
             <textarea
               className="ai-context-textarea mono-input"
-              rows={7}
+              rows={6}
               value={extraContext}
               onChange={(e) => setExtraContext(e.target.value)}
               placeholder="Paste syslog, PowerShell command lines, EDR JSONL, or proxy traces here to ground every AI reply..."

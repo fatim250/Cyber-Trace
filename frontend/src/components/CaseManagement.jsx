@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAssistant } from "./AssistantContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 import Icon from "./Icon.jsx";
 import WorkspaceLayout from "./WorkspaceLayout.jsx";
 import { createCase, deleteCase, getCase, getCases, getCaseMetrics, updateCase } from "../services/casesApi.js";
@@ -184,6 +185,8 @@ function CaseFormModal({ caseRecord, teamMembers = [], onClose, onSaved }) {
 function CaseListPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistant();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [severity, setSeverity] = useState("");
@@ -275,9 +278,11 @@ function CaseListPage() {
           >
             <Icon name="assistant" size={15} /> AI Triage
           </button>
-          <button className="primary-button" type="button" onClick={() => setModalCase(null)}>
-            <Icon name="plus" size={15} /> New case
-          </button>
+          {canWrite && (
+            <button className="primary-button" type="button" onClick={() => setModalCase(null)}>
+              <Icon name="plus" size={15} /> New case
+            </button>
+          )}
         </div>
       </div>
 
@@ -336,7 +341,7 @@ function CaseListPage() {
             <p>{result.total === 0 && !query && !status && !severity
               ? "Create your first investigation to get started."
               : "Try another search term or status filter."}</p>
-            {result.total === 0 && !query && !status && !severity && (
+            {canWrite && result.total === 0 && !query && !status && !severity && (
               <button className="secondary-button" type="button" onClick={() => setModalCase(null)}>
                 Create your first investigation
               </button>
@@ -370,7 +375,7 @@ function CaseListPage() {
                       <td className="mono-cell">{formatDate(item.updatedAt)}</td>
                       <td className="case-row-actions">
                         <Link className="table-action-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>Details</Link>
-                        <button className="table-action-link" type="button" onClick={() => setModalCase(item)}>Edit</button>
+                        {canWrite && <button className="table-action-link" type="button" onClick={() => setModalCase(item)}>Edit</button>}
                         <button
                           className="table-action-link"
                           type="button"
@@ -401,7 +406,7 @@ function CaseListPage() {
                   </p>
                   <div className="mobile-card-actions">
                     <Link className="secondary-button" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>Details</Link>
-                    <button className="secondary-button" type="button" onClick={() => setModalCase(item)}>Edit</button>
+                    {canWrite && <button className="secondary-button" type="button" onClick={() => setModalCase(item)}>Edit</button>}
                     <button className="secondary-button" type="button" onClick={() => openAssistant({ caseId: item.caseNumber })}>Ask AI</button>
                   </div>
                 </article>
@@ -573,6 +578,9 @@ function CaseFormPage({ editing = false }) {
 function CaseDetailPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistant();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
+  const canDelete = hasPermission("delete_cases");
   const { caseNumber = "" } = useParams();
   const [record, setRecord] = useState(null);
   const [status, setStatus] = useState("");
@@ -662,7 +670,9 @@ function CaseDetailPage() {
             >
               <Icon name="assistant" size={15} /> Ask AI about case
             </button>
-            <Link className="primary-button" to={`/cases/${encodeURIComponent(record.caseNumber)}/edit`}>Edit case</Link>
+            {canWrite && (
+              <Link className="primary-button" to={`/cases/${encodeURIComponent(record.caseNumber)}/edit`}>Edit case</Link>
+            )}
           </div>
         )}
       </div>
@@ -687,38 +697,42 @@ function CaseDetailPage() {
 
           <section className="panel case-detail-panel">
             <h2>Update case status</h2>
-            <p>Changes are recorded in the case audit log.</p>
+            <p>{canWrite ? "Changes are recorded in the case audit log." : "Read-only auditor access: status modifications are disabled."}</p>
             <form className="status-update-form" onSubmit={saveStatus}>
               <label>
                 <span>Status</span>
-                <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <select value={status} disabled={!canWrite} onChange={(event) => setStatus(event.target.value)}>
                   {CASE_STATUSES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
                 </select>
               </label>
-              <button className="primary-button" type="submit" disabled={savingStatus || status === record.status}>
-                {savingStatus ? "Saving…" : "Update status"}
-              </button>
+              {canWrite && (
+                <button className="primary-button" type="submit" disabled={savingStatus || status === record.status}>
+                  {savingStatus ? "Saving…" : "Update status"}
+                </button>
+              )}
             </form>
             <div className="case-detail-footer-actions">
               <Link className="case-back-link" to="/cases">Back to all cases</Link>
-              {!confirmDelete ? (
-                <button
-                  type="button"
-                  className="danger-text-button"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Icon name="trash" size={14} /> Archive case
-                </button>
-              ) : (
-                <div className="confirm-delete-row">
-                  <span>Archive this case?</span>
-                  <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)} disabled={deleting}>
-                    Cancel
+              {canDelete && (
+                !confirmDelete ? (
+                  <button
+                    type="button"
+                    className="danger-text-button"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Icon name="trash" size={14} /> Archive case
                   </button>
-                  <button type="button" className="danger-button" onClick={handleDelete} disabled={deleting}>
-                    {deleting ? "Archiving…" : "Confirm"}
-                  </button>
-                </div>
+                ) : (
+                  <div className="confirm-delete-row">
+                    <span>Archive this case?</span>
+                    <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                      Cancel
+                    </button>
+                    <button type="button" className="danger-button" onClick={handleDelete} disabled={deleting}>
+                      {deleting ? "Archiving…" : "Confirm"}
+                    </button>
+                  </div>
+                )
               )}
             </div>
           </section>

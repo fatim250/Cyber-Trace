@@ -1,3 +1,5 @@
+import { buildAuthHeaders } from "./authToken.js";
+
 const API_BASE_URL = import.meta.env.VITE_CYBERTRACE_API_URL?.trim();
 const DASHBOARD_PATH = "/api/v1/dashboard/overview";
 
@@ -22,19 +24,24 @@ function validateDashboardPayload(payload) {
   return payload;
 }
 
-export async function loadDashboardData({ signal, actor } = {}) {
+export async function loadDashboardData({ signal } = {}) {
   const baseUrl = API_BASE_URL ? API_BASE_URL.replace(/\/+$/, "") : "";
-  const url = actor
-    ? `${baseUrl}${DASHBOARD_PATH}?actor=${encodeURIComponent(actor)}`
-    : `${baseUrl}${DASHBOARD_PATH}`;
+  const url = `${baseUrl}${DASHBOARD_PATH}`;
+  const headers = await buildAuthHeaders();
   const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    credentials: "include",
+    headers,
     signal,
   });
 
   if (!response.ok) {
-    throw new Error(`Dashboard data could not be loaded (HTTP ${response.status}).`);
+    let message = `Dashboard data could not be loaded (HTTP ${response.status}).`;
+    try {
+      const err = await response.json();
+      if (err?.error?.message) message = err.error.message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
   }
 
   const payload = validateDashboardPayload(await response.json());

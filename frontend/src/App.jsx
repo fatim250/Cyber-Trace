@@ -5,11 +5,13 @@ import AiAssistantDrawer from "./components/AiAssistantDrawer.jsx";
 import AiWorkspacePage from "./components/AiWorkspacePage.jsx";
 import { CaseTimelinePage, DigitalFootprintPage, LogAnalysisPage } from "./components/AnalysisWorkspace.jsx";
 import { AssistantProvider, useAssistant } from "./components/AssistantContext.jsx";
+import { AuthProvider, ProtectedRoute, useAuth } from "./components/AuthContext.jsx";
 import { CaseDetailsPage, CasesPage, EditCasePage, NewCasePage } from "./components/CaseManagement.jsx";
 import { AnalyticsPanels, MetricCards, SectionHeading } from "./components/DashboardSections.jsx";
 import { EvidenceWorkspace } from "./components/EvidenceWorkspace.jsx";
 import Icon from "./components/Icon.jsx";
 import { ActivityTimelinePanel, CasesPanel, EvidenceIntegrityPanel } from "./components/InvestigationPanels.jsx";
+import LoginPage from "./components/LoginPage.jsx";
 import { AuditLogsPage, InvestigatorsPage, ReportsPage, SettingsPage } from "./components/TeamAndGovernance.jsx";
 import WorkspaceLayout from "./components/WorkspaceLayout.jsx";
 import { loadDashboardData } from "./services/dashboardApi.js";
@@ -29,23 +31,10 @@ function DashboardError({ message, onRetry }) {
   );
 }
 
-function DataModeNotice({ updatedAt }) {
-  const updatedLabel = updatedAt && !Number.isNaN(new Date(updatedAt).getTime())
-    ? new Date(updatedAt).toLocaleString()
-    : null;
-  return (
-    <div className="data-notice live-notice">
-      <Icon name="integrity" size={16} />
-      <strong>Connected workspace data</strong>
-      <span>Live metrics, SHA-256 verification checks, and events from CyberTrace API.</span>
-      {updatedLabel && <time className="tabular-nums" dateTime={updatedAt}>Updated {updatedLabel}</time>}
-    </div>
-  );
-}
-
 function DashboardPage() {
   const navigate = useNavigate();
-  const { openAssistant, activeAnalyst } = useAssistant();
+  const { openAssistant } = useAssistant();
+  const { profile } = useAuth();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -58,7 +47,7 @@ function DashboardPage() {
     setLoading(true);
     setError("");
 
-    loadDashboardData({ signal: controller.signal, actor: activeAnalyst })
+    loadDashboardData({ signal: controller.signal })
       .then(setDashboard)
       .catch((cause) => {
         if (controller.signal.aborted) return;
@@ -70,7 +59,7 @@ function DashboardPage() {
       });
 
     return () => controller.abort();
-  }, [reloadKey, activeAnalyst]);
+  }, [reloadKey, profile?.organizationId]);
 
   useEffect(() => {
     const onWorkspaceUpdate = () => setReloadKey((k) => k + 1);
@@ -102,7 +91,7 @@ function DashboardPage() {
     >
       <div className="page-heading" id="overview">
         <div>
-          <span className="eyebrow">DIGITAL FORENSICS WORKSPACE</span>
+          <span className="eyebrow">{profile?.organizationName || "DIGITAL FORENSICS WORKSPACE"}</span>
           <h1>Investigation overview</h1>
           <p>Trace active cases, verify SHA-256 evidence integrity, and triage events with AI assistance.</p>
         </div>
@@ -131,8 +120,6 @@ function DashboardPage() {
         </div>
       </div>
 
-      {!loading && dashboard && <DataModeNotice updatedAt={data.updatedAt} />}
-
       {error && <DashboardError message={error} onRetry={() => setReloadKey((key) => key + 1)} />}
 
       {error && !dashboard ? null : (
@@ -151,8 +138,8 @@ function DashboardPage() {
           <ActivityTimelinePanel events={data?.activityEvents ?? []} query={query} loading={loading} />
 
           <footer className="dashboard-footer">
-            <span><Icon name="shield" size={14} /> CyberTrace · Digital forensics workspace</span>
-            <span>Connected workspace</span>
+            <span><Icon name="shield" size={14} /> CyberTrace · {profile?.organizationName || "Digital forensics workspace"}</span>
+            <span>{profile?.rbacRole || "Analyst"}</span>
           </footer>
         </>
       )}
@@ -180,33 +167,42 @@ function NotFoundPage() {
   );
 }
 
+function AuthenticatedDrawer() {
+  const { profile } = useAuth();
+  if (!profile) return null;
+  return <AiAssistantDrawer />;
+}
+
 export default function App() {
   return (
-    <AssistantProvider>
+    <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/cases" element={<CasesPage />} />
-          <Route path="/cases/new" element={<NewCasePage />} />
-          <Route path="/cases/:caseNumber/edit" element={<EditCasePage />} />
-          <Route path="/cases/:caseNumber" element={<CaseDetailsPage />} />
-          <Route path="/case-timeline" element={<CaseTimelinePage />} />
-          <Route path="/evidence" element={<EvidenceWorkspace defaultTab="repository" />} />
-          <Route path="/evidence/integrity" element={<EvidenceWorkspace defaultTab="integrity" />} />
-          <Route path="/evidence/chain-of-custody" element={<EvidenceWorkspace defaultTab="custody" />} />
-          <Route path="/analysis/digital-footprint" element={<DigitalFootprintPage />} />
-          <Route path="/analysis/log-analysis" element={<LogAnalysisPage />} />
-          <Route path="/analysis/event-correlation" element={<CaseTimelinePage correlationView />} />
-          <Route path="/analysis/findings" element={<CaseTimelinePage findingsOnly />} />
-          <Route path="/assistant" element={<AiWorkspacePage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/investigators" element={<InvestigatorsPage />} />
-          <Route path="/audit-logs" element={<AuditLogsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-        <AiAssistantDrawer />
+        <AssistantProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+            <Route path="/cases" element={<ProtectedRoute><CasesPage /></ProtectedRoute>} />
+            <Route path="/cases/new" element={<ProtectedRoute><NewCasePage /></ProtectedRoute>} />
+            <Route path="/cases/:caseNumber/edit" element={<ProtectedRoute><EditCasePage /></ProtectedRoute>} />
+            <Route path="/cases/:caseNumber" element={<ProtectedRoute><CaseDetailsPage /></ProtectedRoute>} />
+            <Route path="/case-timeline" element={<ProtectedRoute><CaseTimelinePage /></ProtectedRoute>} />
+            <Route path="/evidence" element={<ProtectedRoute><EvidenceWorkspace defaultTab="repository" /></ProtectedRoute>} />
+            <Route path="/evidence/integrity" element={<ProtectedRoute><EvidenceWorkspace defaultTab="integrity" /></ProtectedRoute>} />
+            <Route path="/evidence/chain-of-custody" element={<ProtectedRoute><EvidenceWorkspace defaultTab="custody" /></ProtectedRoute>} />
+            <Route path="/analysis/digital-footprint" element={<ProtectedRoute><DigitalFootprintPage /></ProtectedRoute>} />
+            <Route path="/analysis/log-analysis" element={<ProtectedRoute><LogAnalysisPage /></ProtectedRoute>} />
+            <Route path="/analysis/event-correlation" element={<ProtectedRoute><CaseTimelinePage correlationView /></ProtectedRoute>} />
+            <Route path="/analysis/findings" element={<ProtectedRoute><CaseTimelinePage findingsOnly /></ProtectedRoute>} />
+            <Route path="/assistant" element={<ProtectedRoute><AiWorkspacePage /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+            <Route path="/investigators" element={<ProtectedRoute><InvestigatorsPage /></ProtectedRoute>} />
+            <Route path="/audit-logs" element={<ProtectedRoute><AuditLogsPage /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="*" element={<ProtectedRoute><NotFoundPage /></ProtectedRoute>} />
+          </Routes>
+          <AuthenticatedDrawer />
+        </AssistantProvider>
       </BrowserRouter>
-    </AssistantProvider>
+    </AuthProvider>
   );
 }

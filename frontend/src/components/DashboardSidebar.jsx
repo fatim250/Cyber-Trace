@@ -40,14 +40,7 @@ const groups = [
   },
 ];
 
-export default function DashboardSidebar({ mode, mobileOpen = false, onClose = () => {} }) {
-  const modeLabels = {
-    live: "CONNECTED DATA",
-    loading: "LOADING SOURCE",
-    unavailable: "API UNAVAILABLE",
-    demo: "DEMO WORKSPACE",
-  };
-
+export default function DashboardSidebar({ mobileOpen = false, onClose = () => {} }) {
   return (
     <>
       {mobileOpen && (
@@ -71,10 +64,6 @@ export default function DashboardSidebar({ mode, mobileOpen = false, onClose = (
           >
             <Icon name="close" size={18} />
           </button>
-        </div>
-        <div className={`mode-indicator mode-${mode}`}>
-          <Icon name={mode === "live" ? "integrity" : mode === "unavailable" ? "findings" : "timeline"} size={14} />
-          <span>{modeLabels[mode] ?? modeLabels.live}</span>
         </div>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {groups.map((group) => (

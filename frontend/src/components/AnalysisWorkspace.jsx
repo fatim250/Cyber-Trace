@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAssistant } from "./AssistantContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 import Icon from "./Icon.jsx";
 import WorkspaceLayout from "./WorkspaceLayout.jsx";
 import { getCases } from "../services/casesApi.js";
 import {
   createEvent,
+  exportIocs,
   extractLogIndicators,
   getEvents,
   getIocs,
@@ -26,6 +28,8 @@ function formatDateTime(value) {
 
 export function CaseTimelinePage({ findingsOnly = false, correlationView = false }) {
   const { openAssistant } = useAssistant();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
   const [events, setEvents] = useState([]);
   const [cases, setCases] = useState([]);
   const [caseFilter, setCaseFilter] = useState("");
@@ -160,9 +164,11 @@ export function CaseTimelinePage({ findingsOnly = false, correlationView = false
           >
             <Icon name="assistant" size={15} /> AI Correlate
           </button>
-          <button type="button" className="primary-button" onClick={() => setShowLogModal(true)}>
-            <Icon name="plus" size={15} /> Log event
-          </button>
+          {canWrite && (
+            <button type="button" className="primary-button" onClick={() => setShowLogModal(true)}>
+              <Icon name="plus" size={15} /> Log event
+            </button>
+          )}
         </div>
       </div>
 
@@ -259,6 +265,7 @@ export function CaseTimelinePage({ findingsOnly = false, correlationView = false
                         <span className="sr-only">Analysis status</span>
                         <select
                           value={ev.analysisStatus}
+                          disabled={!canWrite}
                           onChange={(e) => handleStatusChange(ev.id, e.target.value)}
                         >
                           <option>Not analyzed</option>
@@ -350,6 +357,8 @@ export function CaseTimelinePage({ findingsOnly = false, correlationView = false
 
 export function LogAnalysisPage() {
   const { openAssistant } = useAssistant();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("write_investigations");
   const [cases, setCases] = useState([]);
   const [selectedCase, setSelectedCase] = useState("");
   const [logText, setLogText] = useState(SAMPLE_LOG_SNIPPET);
@@ -468,14 +477,16 @@ export function LogAnalysisPage() {
             >
               {cases.map((c) => <option key={c.caseNumber} value={c.caseNumber}>{c.caseNumber} — {c.title}</option>)}
             </select>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={handleSaveFinding}
-              disabled={saving || !selectedCase || !logText.trim()}
-            >
-              {saving ? "Saving…" : "Save IOCs to Case Timeline"}
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleSaveFinding}
+                disabled={saving || !selectedCase || !logText.trim()}
+              >
+                {saving ? "Saving…" : "Save IOCs to Case Timeline"}
+              </button>
+            )}
           </div>
         </section>
 
@@ -525,18 +536,26 @@ export function DigitalFootprintPage() {
   const { openAssistant } = useAssistant();
   const [iocs, setIocs] = useState([]);
   const [cases, setCases] = useState([]);
+  const [caseFilter, setCaseFilter] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
 
   const loadIocs = useCallback(() => {
     setLoading(true);
-    Promise.all([getIocs(), getCases({ limit: 50 })])
+    setError("");
+    Promise.all([getIocs({ caseNumber: caseFilter }), getCases({ limit: 50 })])
       .then(([iocRes, caseRes]) => {
         setIocs(iocRes.items || []);
         setCases(caseRes.items || []);
       })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Could not load workspace indicators.");
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [caseFilter]);
 
   useEffect(() => {
     loadIocs();
@@ -546,6 +565,20 @@ export function DigitalFootprintPage() {
     window.addEventListener("cybertrace:workspace-updated", loadIocs);
     return () => window.removeEventListener("cybertrace:workspace-updated", loadIocs);
   }, [loadIocs]);
+
+  const handleExport = async (format) => {
+    setExporting(format);
+    setError("");
+    try {
+      const filename = await exportIocs({ format, caseNumber: caseFilter });
+      setNotice(`Exported ${format.toUpperCase()} bundle (${filename}).`);
+      window.setTimeout(() => setNotice(""), 3500);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not export indicators.");
+    } finally {
+      setExporting("");
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -562,6 +595,8 @@ export function DigitalFootprintPage() {
     <WorkspaceLayout
       mode={loading ? "loading" : "live"}
       cases={cases}
+      selectedCaseId={caseFilter}
+      onSelectCase={setCaseFilter}
       query={query}
       onQueryChange={setQuery}
       pageTitle="Digital Footprint"
@@ -572,20 +607,69 @@ export function DigitalFootprintPage() {
           <h1>Digital Footprint</h1>
           <p>Cross-case inventory of observed IP addresses, domains, SHA-256 hashes, and identity principals.</p>
         </div>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => openAssistant({ prompt: "Analyze the observed digital footprint indicators and identify high-risk pivots." })}
-        >
-          <Icon name="assistant" size={15} /> AI Pivot Analysis
-        </button>
+        <div className="page-heading-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={loading || Boolean(exporting)}
+            onClick={() => handleExport("stix")}
+          >
+            <Icon name="download" size={14} />
+            {exporting === "stix" ? "Exporting…" : "Export STIX 2.1"}
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={loading || Boolean(exporting)}
+            onClick={() => handleExport("misp")}
+          >
+            <Icon name="download" size={14} />
+            {exporting === "misp" ? "Exporting…" : "Export MISP"}
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() =>
+              openAssistant({
+                caseId: caseFilter,
+                prompt: "Analyze the observed digital footprint indicators and identify high-risk pivots.",
+              })
+            }
+          >
+            <Icon name="assistant" size={15} /> AI Pivot Analysis
+          </button>
+        </div>
       </div>
+
+      {notice && <div className="case-success-notice" role="status">{notice}</div>}
+      {error && (
+        <div className="dashboard-error" role="alert">
+          <Icon name="findings" size={16} />
+          <div><strong>Indicator error</strong><p>{error}</p></div>
+        </div>
+      )}
 
       <section className="panel">
         <div className="case-list-toolbar">
           <div>
             <h2>Observed indicators</h2>
             <p className="tabular-nums">{filtered.length} indicator{filtered.length === 1 ? "" : "s"}</p>
+          </div>
+          <div className="case-list-controls">
+            <select
+              aria-label="Filter indicators by case"
+              value={caseFilter}
+              onChange={(e) => setCaseFilter(e.target.value)}
+              className="compact-select"
+            >
+              <option value="">All cases</option>
+              {cases.map((c) => (
+                <option key={c.caseNumber} value={c.caseNumber}>{c.caseNumber}</option>
+              ))}
+            </select>
+            <button type="button" className="secondary-button" onClick={loadIocs}>
+              <Icon name="refresh" size={14} /> Refresh
+            </button>
           </div>
         </div>
         {loading ? (
