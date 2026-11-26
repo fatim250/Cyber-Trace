@@ -18,9 +18,21 @@ const iconPaths = {
   down: <path d="m7 10 5 5 5-5" />,
   chevron: <path d="m9 18 6-6-6-6" />,
   menu: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
+  close: <><path d="M18 6 6 18M6 6l12 12" /></>,
   shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M5.5 9A7 7 0 0 1 18 6l2 2m-16 8 2 2a7 7 0 0 0 12.5-3" /></>,
+  assistant: <><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M12 3v3M9 11v2M15 11v2M8 18v2M16 18v2" /></>,
+  send: <><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></>,
+  download: <><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></>,
+  upload: <><path d="M12 15V3m0 0-4 4m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></>,
+  copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  check: <path d="m5 12 5 5L20 7" />,
+  trash: <><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></>,
+  expand: <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></>,
+  collapse: <><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M21 3l-7 7" /></>,
+  paperclip: <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />,
+  terminal: <><path d="m4 17 6-6-6-6M12 19h8" /></>,
 };
 
 export default function Icon({ name, size = 18, className = "" }) {

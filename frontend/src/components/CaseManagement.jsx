@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { useAssistant } from "./AssistantContext.jsx";
 import Icon from "./Icon.jsx";
 import WorkspaceLayout from "./WorkspaceLayout.jsx";
-import { createCase, getCase, getCases, getCaseMetrics, updateCase } from "../services/casesApi.js";
+import { createCase, deleteCase, getCase, getCases, getCaseMetrics, updateCase } from "../services/casesApi.js";
+import { getTeam, getWorkspacePrefs } from "../services/workspaceApi.js";
 
 const CASE_STATUSES = ["OPEN", "IN_PROGRESS", "ESCALATED", "RESOLVED", "CLOSED"];
 const CASE_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-const EMPTY_FORM = {
-  title: "",
-  description: "",
-  assignedTo: "",
-  reporterName: "",
-  status: "OPEN",
-  severity: "MEDIUM",
-};
+
+function makeEmptyForm() {
+  const prefs = getWorkspacePrefs();
+  return {
+    title: "",
+    description: "",
+    assignedTo: "",
+    reporterName: "",
+    status: "OPEN",
+    severity: prefs.defaultSeverity || "MEDIUM",
+  };
+}
 
 function formatLabel(value = "") {
   return value
@@ -35,7 +41,7 @@ function formatDate(value, withTime = false) {
 
 function StatusBadge({ status }) {
   const modifier = status.toLowerCase().replaceAll("_", "-");
-  return <span className={`status-badge status-${modifier}`}><i />{formatLabel(status)}</span>;
+  return <span className={`status-badge status-${modifier}`}>{formatLabel(status)}</span>;
 }
 
 function SeverityBadge({ severity }) {
@@ -56,7 +62,7 @@ function PageError({ message, onRetry }) {
 }
 
 function getInitialCaseValues(caseRecord) {
-  if (!caseRecord) return EMPTY_FORM;
+  if (!caseRecord) return makeEmptyForm();
   return {
     title: caseRecord.title,
     description: caseRecord.description ?? "",
@@ -67,7 +73,7 @@ function getInitialCaseValues(caseRecord) {
   };
 }
 
-function CaseFormModal({ caseRecord, onClose, onSaved }) {
+function CaseFormModal({ caseRecord, teamMembers = [], onClose, onSaved }) {
   const editing = Boolean(caseRecord);
   const [values, setValues] = useState(() => getInitialCaseValues(caseRecord));
   const [saving, setSaving] = useState(false);
@@ -112,9 +118,11 @@ function CaseFormModal({ caseRecord, onClose, onSaved }) {
         <div className="case-modal-heading">
           <div>
             <h2 id="case-modal-title">{editing ? "Edit case" : "Create investigation case"}</h2>
-            <p>{editing ? caseRecord.caseNumber : "Save a new case to the workspace database."}</p>
+            <p>{editing ? caseRecord.caseNumber : "Save a new investigation case to the workspace."}</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Close dialog" disabled={saving} onClick={onClose}>×</button>
+          <button className="icon-button" type="button" aria-label="Close dialog" disabled={saving} onClick={onClose}>
+            <Icon name="close" size={18} />
+          </button>
         </div>
         {error && <PageError message={error} />}
         <form className="case-form case-modal-form" onSubmit={handleSubmit}>
@@ -129,7 +137,18 @@ function CaseFormModal({ caseRecord, onClose, onSaved }) {
           <div className="case-form-row">
             <label>
               <span>Assigned to</span>
-              <input name="assignedTo" value={values.assignedTo} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+              <input
+                name="assignedTo"
+                list="team-member-suggestions"
+                value={values.assignedTo}
+                onChange={handleChange}
+                maxLength={160}
+                autoComplete="off"
+                placeholder="Select or enter engineer"
+              />
+              <datalist id="team-member-suggestions">
+                {teamMembers.map((m) => <option key={m.id} value={m.name}>{m.role}</option>)}
+              </datalist>
             </label>
             <label>
               <span>Reporter name</span>
@@ -164,6 +183,7 @@ function CaseFormModal({ caseRecord, onClose, onSaved }) {
 
 function CaseListPage() {
   const navigate = useNavigate();
+  const { openAssistant } = useAssistant();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [severity, setSeverity] = useState("");
@@ -171,12 +191,17 @@ function CaseListPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState(null);
   const [metrics, setMetrics] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [metricsError, setMetricsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalCase, setModalCase] = useState(undefined);
   const [notice, setNotice] = useState("");
   const pageSize = 50;
+
+  useEffect(() => {
+    getTeam().then((res) => setTeamMembers(res.items || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -238,13 +263,22 @@ function CaseListPage() {
     >
       <div className="page-heading">
         <div>
-          <span className="eyebrow"><span className="eyebrow-dot" /> CASE MANAGEMENT</span>
+          <span className="eyebrow">CASE MANAGEMENT</span>
           <h1>Investigation cases</h1>
-          <p>Create and manage case records stored in the configured CyberTrace database.</p>
+          <p>Create, triage, and collaborate on cyber investigation cases across your team.</p>
         </div>
-        <button className="primary-button" type="button" onClick={() => setModalCase(null)}>
-          <Icon name="plus" size={15} /> New case
-        </button>
+        <div className="page-heading-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => openAssistant({ prompt: "Triage all active investigation cases and highlight critical priorities." })}
+          >
+            <Icon name="assistant" size={15} /> AI Triage
+          </button>
+          <button className="primary-button" type="button" onClick={() => setModalCase(null)}>
+            <Icon name="plus" size={15} /> New case
+          </button>
+        </div>
       </div>
 
       <section className="case-kpi-grid" aria-label="Case metrics" aria-busy={loading}>
@@ -258,7 +292,7 @@ function CaseListPage() {
             <span className={`metric-icon metric-${item.tone}`}><Icon name={item.icon} size={16} /></span>
             <span className="case-kpi-label">{item.label}</span>
             {metricsError ? <strong className="case-kpi-unavailable" title={metricsError}>Unavailable</strong>
-              : metrics ? <strong>{metrics[item.key].toLocaleString()}</strong>
+              : metrics ? <strong className="tabular-nums">{metrics[item.key].toLocaleString()}</strong>
                 : <span className="skeleton case-kpi-skeleton" aria-label="Loading case metric" />}
           </article>
         ))}
@@ -270,7 +304,7 @@ function CaseListPage() {
         <div className="case-list-toolbar">
           <div>
             <h2>Cases</h2>
-            <p>{loading ? "Loading case records…" : error ? "Case records could not be loaded." : `${result.total} case${result.total === 1 ? "" : "s"} returned by the API`}</p>
+            <p>{loading ? "Loading case records…" : error ? "Case records could not be loaded." : `${result.total} case${result.total === 1 ? "" : "s"} returned`}</p>
           </div>
           <div className="case-list-controls">
             <label className="filter-control">
@@ -294,7 +328,7 @@ function CaseListPage() {
         </div>
 
         {error ? <PageError message={error} onRetry={() => setReloadKey((key) => key + 1)} /> : loading ? (
-          <div className="case-loading" aria-live="polite">Loading cases from the database…</div>
+          <div className="case-loading" aria-live="polite">Loading cases…</div>
         ) : result?.items.length === 0 ? (
           <div className="case-empty">
             <span className="empty-state-mark"><Icon name="cases" size={18} /></span>
@@ -310,7 +344,7 @@ function CaseListPage() {
           </div>
         ) : (
           <>
-            <div className="table-scroll case-list-table-wrap">
+            <div className="table-scroll desktop-table-wrap case-list-table-wrap">
               <table className="cases-table case-management-table">
                 <thead>
                   <tr>
@@ -327,22 +361,53 @@ function CaseListPage() {
                 <tbody>
                   {result.items.map((item) => (
                     <tr key={item.id}>
-                      <td><Link className="case-id case-title-link" to={`/cases/${encodeURIComponent(item.id)}`}>{item.caseNumber}</Link></td>
-                      <td><Link className="case-title case-title-link" to={`/cases/${encodeURIComponent(item.id)}`}>{item.title}</Link></td>
+                      <td><Link className="case-id case-title-link mono-cell" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.caseNumber}</Link></td>
+                      <td><Link className="case-title case-title-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.title}</Link></td>
                       <td>{item.assignedTo || "Unassigned"}</td>
                       <td><SeverityBadge severity={item.severity} /></td>
                       <td><StatusBadge status={item.status} /></td>
-                      <td>{formatDate(item.createdAt)}</td>
-                      <td>{formatDate(item.updatedAt)}</td>
+                      <td className="mono-cell">{formatDate(item.createdAt)}</td>
+                      <td className="mono-cell">{formatDate(item.updatedAt)}</td>
                       <td className="case-row-actions">
-                        <Link className="table-action-link" to={`/cases/${encodeURIComponent(item.id)}`}>Details</Link>
+                        <Link className="table-action-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>Details</Link>
                         <button className="table-action-link" type="button" onClick={() => setModalCase(item)}>Edit</button>
+                        <button
+                          className="table-action-link"
+                          type="button"
+                          onClick={() => openAssistant({ caseId: item.caseNumber })}
+                        >
+                          Ask AI
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            <div className="mobile-card-list">
+              {result.items.map((item) => (
+                <article className="mobile-data-card" key={item.id}>
+                  <div className="mobile-card-top">
+                    <Link className="case-id case-title-link mono-cell" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.caseNumber}</Link>
+                    <div className="mobile-badge-pair">
+                      <SeverityBadge severity={item.severity} />
+                      <StatusBadge status={item.status} />
+                    </div>
+                  </div>
+                  <Link className="case-title case-title-link" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>{item.title}</Link>
+                  <p className="mobile-card-meta">
+                    {item.assignedTo || "Unassigned"} · Updated {formatDate(item.updatedAt)}
+                  </p>
+                  <div className="mobile-card-actions">
+                    <Link className="secondary-button" to={`/cases/${encodeURIComponent(item.caseNumber)}`}>Details</Link>
+                    <button className="secondary-button" type="button" onClick={() => setModalCase(item)}>Edit</button>
+                    <button className="secondary-button" type="button" onClick={() => openAssistant({ caseId: item.caseNumber })}>Ask AI</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+
             <div className="case-pagination">
               <span>Showing {skip + 1}–{Math.min(skip + result.items.length, result.total)} of {result.total}</span>
               <div>
@@ -357,6 +422,7 @@ function CaseListPage() {
       {modalCase !== undefined && (
         <CaseFormModal
           caseRecord={modalCase}
+          teamMembers={teamMembers}
           onClose={() => setModalCase(undefined)}
           onSaved={(message) => {
             setModalCase(undefined);
@@ -373,10 +439,15 @@ function CaseFormPage({ editing = false }) {
   const navigate = useNavigate();
   const { caseNumber = "" } = useParams();
   const [record, setRecord] = useState(null);
-  const [values, setValues] = useState(EMPTY_FORM);
+  const [values, setValues] = useState(makeEmptyForm);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(editing);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    getTeam().then((res) => setTeamMembers(res.items || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!editing) return undefined;
@@ -434,9 +505,9 @@ function CaseFormPage({ editing = false }) {
     >
       <div className="page-heading">
         <div>
-          <span className="eyebrow"><span className="eyebrow-dot" /> CASE MANAGEMENT</span>
+          <span className="eyebrow">CASE MANAGEMENT</span>
           <h1>{editing ? "Edit case" : "Create a case"}</h1>
-          <p>{editing ? `Update the information for ${caseNumber}.` : "Create a case record in the configured database."}</p>
+          <p>{editing ? `Update the information for ${caseNumber}.` : "Create a case record in the workspace."}</p>
         </div>
         {record && <span className="page-context"><Icon name="cases" size={15} />{record.caseNumber}</span>}
       </div>
@@ -455,7 +526,18 @@ function CaseFormPage({ editing = false }) {
           <div className="case-form-row">
             <label>
               <span>Assigned to</span>
-              <input name="assignedTo" value={values.assignedTo} onChange={handleChange} maxLength={160} autoComplete="off" placeholder="Optional" />
+              <input
+                name="assignedTo"
+                list="team-member-page-suggestions"
+                value={values.assignedTo}
+                onChange={handleChange}
+                maxLength={160}
+                autoComplete="off"
+                placeholder="Select or enter engineer"
+              />
+              <datalist id="team-member-page-suggestions">
+                {teamMembers.map((m) => <option key={m.id} value={m.name}>{m.role}</option>)}
+              </datalist>
             </label>
             <label>
               <span>Reporter name</span>
@@ -490,11 +572,14 @@ function CaseFormPage({ editing = false }) {
 
 function CaseDetailPage() {
   const navigate = useNavigate();
+  const { openAssistant } = useAssistant();
   const { caseNumber = "" } = useParams();
   const [record, setRecord] = useState(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -516,6 +601,12 @@ function CaseDetailPage() {
     return () => controller.abort();
   }, [caseNumber, reloadKey]);
 
+  useEffect(() => {
+    const onWorkspaceUpdate = () => setReloadKey((k) => k + 1);
+    window.addEventListener("cybertrace:workspace-updated", onWorkspaceUpdate);
+    return () => window.removeEventListener("cybertrace:workspace-updated", onWorkspaceUpdate);
+  }, []);
+
   const saveStatus = async (event) => {
     event.preventDefault();
     setSavingStatus(true);
@@ -531,6 +622,17 @@ function CaseDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteCase(record.caseNumber);
+      navigate("/cases", { replace: true });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not archive case.");
+      setDeleting(false);
+    }
+  };
+
   return (
     <WorkspaceLayout
       mode={loading ? "loading" : error ? "unavailable" : "live"}
@@ -542,11 +644,27 @@ function CaseDetailPage() {
     >
       <div className="page-heading">
         <div>
-          <span className="eyebrow"><span className="eyebrow-dot" /> CASE MANAGEMENT</span>
+          <span className="eyebrow">CASE MANAGEMENT</span>
           <h1>{loading ? "Case details" : record?.title ?? "Case not found"}</h1>
           <p>{record ? `Case ${record.caseNumber} · Created ${formatDate(record.createdAt, true)}` : "Review and update a saved case record."}</p>
         </div>
-        {record && <Link className="primary-button" to={`/cases/${encodeURIComponent(record.id)}/edit`}>Edit case</Link>}
+        {record && (
+          <div className="page-heading-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                openAssistant({
+                  caseId: record.caseNumber,
+                  prompt: `Analyze ${record.caseNumber} ("${record.title}"), summarize confirmed facts and evidence status, and recommend next forensic steps.`,
+                })
+              }
+            >
+              <Icon name="assistant" size={15} /> Ask AI about case
+            </button>
+            <Link className="primary-button" to={`/cases/${encodeURIComponent(record.caseNumber)}/edit`}>Edit case</Link>
+          </div>
+        )}
       </div>
 
       {error && <PageError message={error} onRetry={() => setReloadKey((key) => key + 1)} />}
@@ -555,33 +673,109 @@ function CaseDetailPage() {
           <section className="panel case-detail-panel">
             <h2>Case information</h2>
             <dl className="case-detail-list">
-              <div><dt>Case ID</dt><dd>{record.caseNumber}</dd></div>
+              <div><dt>Case ID</dt><dd className="mono-cell">{record.caseNumber}</dd></div>
               <div><dt>Title</dt><dd>{record.title}</dd></div>
               <div><dt>Assigned to</dt><dd>{record.assignedTo || "Unassigned"}</dd></div>
               <div><dt>Reporter</dt><dd>{record.reporterName || "Not specified"}</dd></div>
               <div><dt>Severity</dt><dd><SeverityBadge severity={record.severity} /></dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={record.status} /></dd></div>
-              <div><dt>Created</dt><dd>{formatDate(record.createdAt, true)}</dd></div>
-              <div><dt>Last updated</dt><dd>{formatDate(record.updatedAt, true)}</dd></div>
+              <div><dt>Created</dt><dd className="mono-cell">{formatDate(record.createdAt, true)}</dd></div>
+              <div><dt>Last updated</dt><dd className="mono-cell">{formatDate(record.updatedAt, true)}</dd></div>
               <div className="case-description"><dt>Description</dt><dd>{record.description || "No description provided."}</dd></div>
             </dl>
           </section>
+
           <section className="panel case-detail-panel">
             <h2>Update case status</h2>
-            <p>Changes are saved to the case database.</p>
+            <p>Changes are recorded in the case audit log.</p>
             <form className="status-update-form" onSubmit={saveStatus}>
               <label>
                 <span>Status</span>
                 <select value={status} onChange={(event) => setStatus(event.target.value)}>
-                  {CASE_STATUSES.map((item) => <option key={item}>{item}</option>)}
+                  {CASE_STATUSES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}
                 </select>
               </label>
               <button className="primary-button" type="submit" disabled={savingStatus || status === record.status}>
                 {savingStatus ? "Saving…" : "Update status"}
               </button>
             </form>
-            <Link className="case-back-link" to="/cases">Back to all cases</Link>
+            <div className="case-detail-footer-actions">
+              <Link className="case-back-link" to="/cases">Back to all cases</Link>
+              {!confirmDelete ? (
+                <button
+                  type="button"
+                  className="danger-text-button"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Icon name="trash" size={14} /> Archive case
+                </button>
+              ) : (
+                <div className="confirm-delete-row">
+                  <span>Archive this case?</span>
+                  <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                    Cancel
+                  </button>
+                  <button type="button" className="danger-button" onClick={handleDelete} disabled={deleting}>
+                    {deleting ? "Archiving…" : "Confirm"}
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
+
+          {record.evidence?.length > 0 && (
+            <section className="panel case-detail-panel case-audit-panel">
+              <div className="case-list-toolbar">
+                <div>
+                  <h2>Linked evidence ({record.evidence.length})</h2>
+                  <p>Forensic artifacts and SHA-256 verification status for this case.</p>
+                </div>
+                <Link className="secondary-button" to="/evidence">Open Evidence Repository</Link>
+              </div>
+              <div className="table-scroll desktop-table-wrap">
+                <table className="cases-table">
+                  <thead>
+                    <tr>
+                      <th>EVIDENCE ID</th>
+                      <th>ARTIFACT</th>
+                      <th>HOST</th>
+                      <th>SHA-256</th>
+                      <th>VERIFICATION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {record.evidence.map((ev) => (
+                      <tr key={ev.id}>
+                        <td className="mono-cell">{ev.id}</td>
+                        <td><strong>{ev.name}</strong></td>
+                        <td>{ev.sourceHost}</td>
+                        <td className="mono-cell">{ev.expectedSha256.slice(0, 16)}…</td>
+                        <td>
+                          {!ev.comparisonPerformed ? "Pending" : ev.sha256Matches ? "Verified match" : "Mismatch"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mobile-card-list">
+                {record.evidence.map((ev) => (
+                  <article className="mobile-data-card" key={ev.id}>
+                    <div className="mobile-card-top">
+                      <span className="case-id mono-cell">{ev.id}</span>
+                      <span className={`status-badge ${!ev.comparisonPerformed ? "status-under-review" : ev.sha256Matches ? "status-resolved" : "status-escalated"}`}>
+                        {!ev.comparisonPerformed ? "Pending" : ev.sha256Matches ? "Verified" : "Mismatch"}
+                      </span>
+                    </div>
+                    <strong>{ev.name}</strong>
+                    <p className="mobile-card-meta">{ev.sourceHost} · {ev.artifactType}</p>
+                    <p className="mobile-card-hash mono-cell">SHA-256: {ev.expectedSha256.slice(0, 20)}…</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="panel case-detail-panel case-audit-panel">
             <h2>Case activity</h2>
             <p>Changes recorded in the case audit history.</p>

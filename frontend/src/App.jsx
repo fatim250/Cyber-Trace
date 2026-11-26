@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-dom";
 
+import AiAssistantDrawer from "./components/AiAssistantDrawer.jsx";
+import AiWorkspacePage from "./components/AiWorkspacePage.jsx";
+import { CaseTimelinePage, DigitalFootprintPage, LogAnalysisPage } from "./components/AnalysisWorkspace.jsx";
+import { AssistantProvider, useAssistant } from "./components/AssistantContext.jsx";
 import { CaseDetailsPage, CasesPage, EditCasePage, NewCasePage } from "./components/CaseManagement.jsx";
 import { AnalyticsPanels, MetricCards, SectionHeading } from "./components/DashboardSections.jsx";
+import { EvidenceWorkspace } from "./components/EvidenceWorkspace.jsx";
 import Icon from "./components/Icon.jsx";
 import { ActivityTimelinePanel, CasesPanel, EvidenceIntegrityPanel } from "./components/InvestigationPanels.jsx";
+import { AuditLogsPage, InvestigatorsPage, ReportsPage, SettingsPage } from "./components/TeamAndGovernance.jsx";
 import WorkspaceLayout from "./components/WorkspaceLayout.jsx";
 import { loadDashboardData } from "./services/dashboardApi.js";
 
@@ -23,30 +29,23 @@ function DashboardError({ message, onRetry }) {
   );
 }
 
-function DataModeNotice({ mode, updatedAt }) {
-  if (mode === "live") {
-    const updatedLabel = updatedAt && !Number.isNaN(new Date(updatedAt).getTime())
-      ? new Date(updatedAt).toLocaleString()
-      : null;
-    return (
-      <div className="data-notice live-notice">
-        <span className="notice-indicator" />
-        <strong>Connected workspace data</strong>
-        <span>Values below were returned by the configured CyberTrace API.</span>
-        {updatedLabel && <time dateTime={updatedAt}>Updated {updatedLabel}</time>}
-      </div>
-    );
-  }
-
+function DataModeNotice({ updatedAt }) {
+  const updatedLabel = updatedAt && !Number.isNaN(new Date(updatedAt).getTime())
+    ? new Date(updatedAt).toLocaleString()
+    : null;
   return (
-    <div className="data-notice demo-notice">
-      <Icon name="shield" size={16} />
-      <span><strong>Demonstration data</strong> — all cases, counts, events, and charts are illustrative samples, not real investigation records.</span>
+    <div className="data-notice live-notice">
+      <Icon name="integrity" size={16} />
+      <strong>Connected workspace data</strong>
+      <span>Live metrics, SHA-256 verification checks, and events from CyberTrace API.</span>
+      {updatedLabel && <time className="tabular-nums" dateTime={updatedAt}>Updated {updatedLabel}</time>}
     </div>
   );
 }
 
 function DashboardPage() {
+  const navigate = useNavigate();
+  const { openAssistant, activeAnalyst } = useAssistant();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -59,7 +58,7 @@ function DashboardPage() {
     setLoading(true);
     setError("");
 
-    loadDashboardData({ signal: controller.signal })
+    loadDashboardData({ signal: controller.signal, actor: activeAnalyst })
       .then(setDashboard)
       .catch((cause) => {
         if (controller.signal.aborted) return;
@@ -71,7 +70,13 @@ function DashboardPage() {
       });
 
     return () => controller.abort();
-  }, [reloadKey]);
+  }, [reloadKey, activeAnalyst]);
+
+  useEffect(() => {
+    const onWorkspaceUpdate = () => setReloadKey((k) => k + 1);
+    window.addEventListener("cybertrace:workspace-updated", onWorkspaceUpdate);
+    return () => window.removeEventListener("cybertrace:workspace-updated", onWorkspaceUpdate);
+  }, []);
 
   const data = dashboard?.data;
   const cases = data?.cases ?? [];
@@ -83,32 +88,57 @@ function DashboardPage() {
 
   return (
     <WorkspaceLayout
-      mode={dashboard?.mode ?? (loading ? "loading" : "demo")}
+      mode={dashboard?.mode ?? (loading ? "loading" : "unavailable")}
       currentUser={data?.currentUser}
       cases={cases}
       selectedCaseId={currentCaseId}
-      onSelectCase={setSelectedCaseId}
+      onSelectCase={(caseNum) => {
+        setSelectedCaseId(caseNum);
+      }}
       query={query}
       onQueryChange={setQuery}
+      notifications={data?.notifications ?? []}
       pageTitle="Dashboard"
     >
       <div className="page-heading" id="overview">
         <div>
-          <span className="eyebrow"><span className="eyebrow-dot" /> DIGITAL FORENSICS WORKSPACE</span>
+          <span className="eyebrow">DIGITAL FORENSICS WORKSPACE</span>
           <h1>Investigation overview</h1>
-          <p>Review cases, evidence integrity, and recorded activity in one place.</p>
+          <p>Trace active cases, verify SHA-256 evidence integrity, and triage events with AI assistance.</p>
         </div>
-        <span className="page-context"><Icon name="cases" size={15} />{currentCaseId || "No case selected"}</span>
+        <div className="page-heading-actions">
+          {currentCaseId && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate(`/cases/${encodeURIComponent(currentCaseId)}`)}
+            >
+              <Icon name="cases" size={15} /> Open {currentCaseId}
+            </button>
+          )}
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() =>
+              openAssistant({
+                caseId: currentCaseId,
+                prompt: "Provide an executive triage overview of active critical cases, pending SHA-256 verifications, and findings requiring review.",
+              })
+            }
+          >
+            <Icon name="assistant" size={15} /> Ask AI Assistant
+          </button>
+        </div>
       </div>
 
-      {!loading && dashboard && <DataModeNotice mode={dashboard.mode} updatedAt={data.updatedAt} />}
+      {!loading && dashboard && <DataModeNotice updatedAt={data.updatedAt} />}
 
       {error && <DashboardError message={error} onRetry={() => setReloadKey((key) => key + 1)} />}
 
       {error && !dashboard ? null : (
         <>
           <section className="dashboard-section metrics-section" aria-label="Investigation metrics">
-            <SectionHeading title="Workspace metrics" subtitle="Current totals from the selected data source." />
+            <SectionHeading title="Workspace metrics" subtitle="Live counts across cases, evidence items, and analytical findings." />
             <MetricCards metrics={data?.metrics} loading={loading} />
           </section>
 
@@ -121,8 +151,8 @@ function DashboardPage() {
           <ActivityTimelinePanel events={data?.activityEvents ?? []} query={query} loading={loading} />
 
           <footer className="dashboard-footer">
-            <span><Icon name="shield" size={14} /> CyberTrace <span>·</span> Digital forensics workspace</span>
-            <span>{dashboard?.mode === "live" ? "Connected data" : "Illustrative data only"}</span>
+            <span><Icon name="shield" size={14} /> CyberTrace · Digital forensics workspace</span>
+            <span>Connected workspace</span>
           </footer>
         </>
       )}
@@ -130,53 +160,53 @@ function DashboardPage() {
   );
 }
 
-function ModulePlaceholder({ title }) {
+function NotFoundPage() {
   return (
-    <WorkspaceLayout mode="not-implemented" pageTitle={title} showSearch={false}>
+    <WorkspaceLayout mode="live" pageTitle="Not found" showSearch={false}>
       <div className="page-heading">
         <div>
-          <span className="eyebrow"><span className="eyebrow-dot" /> CYBERTRACE WORKSPACE</span>
-          <h1>{title}</h1>
-          <p>This destination is available in navigation; its investigation workflow has not been implemented yet.</p>
+          <span className="eyebrow">CYBERTRACE WORKSPACE</span>
+          <h1>Page not found</h1>
+          <p>The requested destination does not exist in this workspace.</p>
         </div>
       </div>
       <section className="panel module-placeholder">
         <span className="empty-state-mark"><Icon name="shield" size={18} /></span>
-        <h2>Module not implemented</h2>
-        <p>No data or actions are simulated on this page. Case Management is the currently available operational module.</p>
-        <Link className="secondary-button" to="/cases">Open Cases</Link>
+        <h2>Route not found</h2>
+        <p>Return to the Dashboard or Cases workspace to continue your investigation.</p>
+        <Link className="secondary-button" to="/">Back to Dashboard</Link>
       </section>
     </WorkspaceLayout>
   );
 }
 
-function NotFoundPage() {
-  return <ModulePlaceholder title="Page not found" />;
-}
-
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/cases" element={<CasesPage />} />
-        <Route path="/cases/new" element={<NewCasePage />} />
-        <Route path="/cases/:caseNumber/edit" element={<EditCasePage />} />
-        <Route path="/cases/:caseNumber" element={<CaseDetailsPage />} />
-        <Route path="/case-timeline" element={<ModulePlaceholder title="Case Timeline" />} />
-        <Route path="/evidence" element={<ModulePlaceholder title="Evidence Repository" />} />
-        <Route path="/evidence/integrity" element={<ModulePlaceholder title="Evidence Integrity" />} />
-        <Route path="/evidence/chain-of-custody" element={<ModulePlaceholder title="Chain of Custody" />} />
-        <Route path="/analysis/digital-footprint" element={<ModulePlaceholder title="Digital Footprint" />} />
-        <Route path="/analysis/log-analysis" element={<ModulePlaceholder title="Log Analysis" />} />
-        <Route path="/analysis/event-correlation" element={<ModulePlaceholder title="Event Correlation" />} />
-        <Route path="/analysis/findings" element={<ModulePlaceholder title="Forensic Findings" />} />
-        <Route path="/reports" element={<ModulePlaceholder title="Reports" />} />
-        <Route path="/investigators" element={<ModulePlaceholder title="Investigators" />} />
-        <Route path="/audit-logs" element={<ModulePlaceholder title="Audit Logs" />} />
-        <Route path="/settings" element={<ModulePlaceholder title="Settings" />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </BrowserRouter>
+    <AssistantProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/cases" element={<CasesPage />} />
+          <Route path="/cases/new" element={<NewCasePage />} />
+          <Route path="/cases/:caseNumber/edit" element={<EditCasePage />} />
+          <Route path="/cases/:caseNumber" element={<CaseDetailsPage />} />
+          <Route path="/case-timeline" element={<CaseTimelinePage />} />
+          <Route path="/evidence" element={<EvidenceWorkspace defaultTab="repository" />} />
+          <Route path="/evidence/integrity" element={<EvidenceWorkspace defaultTab="integrity" />} />
+          <Route path="/evidence/chain-of-custody" element={<EvidenceWorkspace defaultTab="custody" />} />
+          <Route path="/analysis/digital-footprint" element={<DigitalFootprintPage />} />
+          <Route path="/analysis/log-analysis" element={<LogAnalysisPage />} />
+          <Route path="/analysis/event-correlation" element={<CaseTimelinePage correlationView />} />
+          <Route path="/analysis/findings" element={<CaseTimelinePage findingsOnly />} />
+          <Route path="/assistant" element={<AiWorkspacePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/investigators" element={<InvestigatorsPage />} />
+          <Route path="/audit-logs" element={<AuditLogsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+        <AiAssistantDrawer />
+      </BrowserRouter>
+    </AssistantProvider>
   );
 }

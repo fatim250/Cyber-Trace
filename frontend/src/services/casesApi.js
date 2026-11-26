@@ -1,3 +1,5 @@
+import { getActiveAnalyst } from "./workspaceApi.js";
+
 const CASES_URL = "/api/v1/cases";
 
 function getErrorMessage(payload, statusCode) {
@@ -5,10 +7,10 @@ function getErrorMessage(payload, statusCode) {
   if (typeof apiError?.message === "string") return apiError.message;
   const detail = payload?.detail;
   if (statusCode === 404 && detail === "Not Found") {
-    return "Cases API route not found (HTTP 404). Restart the CyberTrace backend and confirm /api/v1/cases is registered.";
+    return "Cases API route not found (HTTP 404).";
   }
   if ((statusCode === 502 || statusCode === 503) && typeof detail !== "string") {
-    return `The backend is unavailable through the /api proxy (HTTP ${statusCode}). Start FastAPI on port 8000 and check its database configuration.`;
+    return `The backend is unavailable through the /api proxy (HTTP ${statusCode}).`;
   }
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
@@ -25,6 +27,7 @@ async function request(path = "", options = {}) {
       ...options,
       headers: {
         Accept: "application/json",
+        "X-CyberTrace-Actor": getActiveAnalyst(),
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,
       },
@@ -32,9 +35,13 @@ async function request(path = "", options = {}) {
   } catch (error) {
     if (options.signal?.aborted) throw error;
     if (error instanceof TypeError) {
-      throw new Error("Cannot reach the Cases API through the /api proxy. Start FastAPI on port 8000.");
+      throw new Error("Cannot reach the Cases API.");
     }
     throw error;
+  }
+
+  if (response.status === 204) {
+    return null;
   }
 
   const text = await response.text();
@@ -104,4 +111,8 @@ export async function updateCase(caseNumber, values) {
       body: JSON.stringify(values),
     }),
   );
+}
+
+export async function deleteCase(caseNumber) {
+  await request(`/${encodeURIComponent(caseNumber)}`, { method: "DELETE" });
 }

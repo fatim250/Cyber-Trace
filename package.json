@@ -1,0 +1,20 @@
+{
+  "name": "cybertrace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "node server.js",
+    "build:frontend": "npm --workspace=frontend run build",
+    "build": "npm run build:frontend",
+    "start": "NODE_ENV=production node server.js",
+    "lint": "node --check server.js && node --check server/store.js && node --check server/assistant.js"
+  },
+  "dependencies": {
+    "@google/genai": "^3.6.1",
+    "express": "^4.21.2"
+  }
+}

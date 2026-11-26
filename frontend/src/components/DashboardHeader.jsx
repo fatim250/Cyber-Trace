@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
+import { useAssistant } from "./AssistantContext.jsx";
 import Icon from "./Icon.jsx";
 
 function getInitials(name = "") {
@@ -21,52 +23,84 @@ export default function DashboardHeader({
   notifications = [],
   pageTitle = "Dashboard",
   showSearch = true,
+  onOpenMenu = () => {},
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const displayName = currentUser?.displayName || "Identity unavailable";
-  const role = currentUser?.role || "No authenticated session";
+  const { openAssistant, activeAnalyst } = useAssistant();
+
+  const displayName = currentUser?.displayName || activeAnalyst || "Nadia Vance";
+  const role = currentUser?.role || "DFIR Engineer";
 
   return (
     <header className="topbar">
-      <div className="breadcrumb">
-        <span>Investigation workspace</span>
-        <Icon name="chevron" size={14} />
-        <strong>{pageTitle}</strong>
+      <div className="topbar-left">
+        <button
+          className="icon-button mobile-menu-btn"
+          type="button"
+          onClick={onOpenMenu}
+          aria-label="Open navigation menu"
+        >
+          <Icon name="menu" size={19} />
+        </button>
+        <div className="breadcrumb">
+          <span>CyberTrace</span>
+          <Icon name="chevron" size={14} />
+          <strong>{pageTitle}</strong>
+        </div>
       </div>
+
       <div className="topbar-actions">
-        {showSearch && <label className="search-box">
-          <Icon name="search" size={16} />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={pageTitle === "Cases" ? "Search cases" : "Search cases and events"}
-            aria-label={pageTitle === "Cases" ? "Search cases" : "Search cases and events"}
-          />
-        </label>}
+        {showSearch && (
+          <label className="search-box">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder={pageTitle === "Cases" ? "Search cases" : "Search cases & events"}
+              aria-label={pageTitle === "Cases" ? "Search cases" : "Search cases and events"}
+            />
+          </label>
+        )}
+
         <label className="case-selector">
-          <span>Current case</span>
+          <span>Active case</span>
           <select
             aria-label="Current investigation"
             value={selectedCaseId}
             onChange={(event) => onSelectCase(event.target.value)}
             disabled={cases.length === 0}
           >
-            <option value="">{cases.length ? "Select a case" : "No cases available"}</option>
-            {cases.length === 0 ? (
-              null
-            ) : cases.map((item) => (
+            <option value="">{cases.length ? "All cases" : "No cases"}</option>
+            {cases.map((item) => (
               <option value={item.caseNumber ?? item.id} key={item.caseNumber ?? item.id}>
                 {item.caseNumber ?? item.id}
               </option>
             ))}
           </select>
         </label>
+
+        <button
+          type="button"
+          className="ai-trigger-button"
+          onClick={() => {
+            if (window.location.pathname === "/assistant") {
+              document.querySelector(".ai-composer textarea")?.focus();
+            } else {
+              openAssistant({ caseId: selectedCaseId || "" });
+            }
+          }}
+          aria-label="Open AI Investigation Assistant"
+        >
+          <Icon name="assistant" size={16} />
+          <span>AI Assistant</span>
+        </button>
+
         <div className="header-menu-wrap">
           <button
             className="icon-button notification-button"
-            aria-label={`Notifications${notifications.length ? `, ${notifications.length} unread` : ""}`}
+            aria-label={`Notifications${notifications.length ? `, ${notifications.length} active` : ""}`}
             aria-expanded={notificationsOpen}
             onClick={() => {
               setNotificationsOpen((open) => !open);
@@ -78,13 +112,16 @@ export default function DashboardHeader({
           </button>
           {notificationsOpen && (
             <div className="header-popover notification-popover">
-              <strong>Notifications</strong>
+              <strong>Workspace alerts</strong>
               {notifications.length === 0 ? (
-                <p>No notifications were returned for this workspace.</p>
-              ) : notifications.map((item) => <p key={item.id}>{item.message}</p>)}
+                <p>No active alerts in the workspace.</p>
+              ) : (
+                notifications.map((item) => <p key={item.id}>{item.message}</p>)
+              )}
             </div>
           )}
         </div>
+
         <div className="header-menu-wrap">
           <button
             className="profile-button"
@@ -105,7 +142,10 @@ export default function DashboardHeader({
             <div className="header-popover profile-popover">
               <strong>{displayName}</strong>
               <p>{role}</p>
-              <small>Identity is supplied by the active session.</small>
+              <small>Actions and audit trails are attributed to this profile.</small>
+              <Link className="popover-link" to="/settings" onClick={() => setProfileOpen(false)}>
+                Switch analyst profile
+              </Link>
             </div>
           )}
         </div>

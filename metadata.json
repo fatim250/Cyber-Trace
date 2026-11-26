@@ -1,0 +1,8 @@
+{
+  "name": "CyberTrace",
+  "description": "Defensive digital forensics and cyber investigation workspace for managing investigation cases, audit trails, and evidence review.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

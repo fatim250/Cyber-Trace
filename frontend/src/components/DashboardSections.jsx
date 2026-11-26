@@ -68,10 +68,9 @@ export function MetricCards({ metrics, loading }) {
         return (
           <article className="metric-card" key={metric.key} title={metric.description}>
             <div className="metric-card-heading">
-              <span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={17} /></span>
-              <span className="metric-help" title={metric.description} aria-label={metric.description}>i</span>
+              <span className={`metric-icon metric-${metric.tone}`}><Icon name={metric.icon} size={18} /></span>
+              <span className="metric-label-top">{metric.label}</span>
             </div>
-            <p>{metric.label}</p>
             {loading ? (
               <Skeleton className="metric-skeleton" />
             ) : (
@@ -106,7 +105,7 @@ function TrendChart({ points, loading }) {
   }
 
   const width = 520;
-  const height = 145;
+  const height = 148;
   const inset = 12;
   const max = Math.max(1, ...points.map((point) => point.count));
   const coordinates = points.map((point, index) => {
@@ -115,16 +114,24 @@ function TrendChart({ points, loading }) {
     return { ...point, x, y };
   });
   const path = coordinates.map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`).join(" ");
+  const areaPath = `${path} L${coordinates[coordinates.length - 1].x},${height - inset} L${coordinates[0].x},${height - inset} Z`;
 
   return (
     <div className="trend-chart">
-      <div className="chart-y-labels"><span>{numberFormat.format(max)}</span><span>{numberFormat.format(Math.round(max / 2))}</span><span>0</span></div>
+      <div className="chart-y-labels tabular-nums"><span>{numberFormat.format(max)}</span><span>{numberFormat.format(Math.round(max / 2))}</span><span>0</span></div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Event volume over time, shown as event counts">
+        <defs>
+          <linearGradient id="cybertraceTrendArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3bc8df" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#3bc8df" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
         {[inset, height / 2, height - inset].map((y) => <line key={y} x1={inset} y1={y} x2={width - inset} y2={y} className="chart-gridline" />)}
+        <path d={areaPath} fill="url(#cybertraceTrendArea)" />
         <path d={path} className="trend-line" />
-        {coordinates.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="3" className="trend-point"><title>{point.label}: {numberFormat.format(point.count)} events</title></circle>)}
+        {coordinates.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="3.5" className="trend-point"><title>{point.label}: {numberFormat.format(point.count)} events</title></circle>)}
       </svg>
-      <div className="chart-x-labels">
+      <div className="chart-x-labels tabular-nums">
         {coordinates.map((point) => <span key={point.label}>{point.label}</span>)}
       </div>
     </div>

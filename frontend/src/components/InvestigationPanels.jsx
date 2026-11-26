@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 
 import Icon from "./Icon.jsx";
@@ -21,7 +22,7 @@ function formatDateTime(value) {
 
 function StatusBadge({ status }) {
   const modifier = status?.toLowerCase().replaceAll(" ", "-") || "unknown";
-  return <span className={`status-badge status-${modifier}`}><i />{status || "Unknown"}</span>;
+  return <span className={`status-badge status-${modifier}`}>{status || "Unknown"}</span>;
 }
 
 function PanelSkeleton({ rows = 4 }) {
@@ -62,7 +63,7 @@ export function CasesPanel({ cases, query, loading }) {
         />
       ) : (
         <>
-          <div className="table-scroll">
+          <div className="table-scroll desktop-table-wrap">
             <table className="cases-table">
               <thead>
                 <tr>
@@ -75,18 +76,38 @@ export function CasesPanel({ cases, query, loading }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredCases.map((item) => (
-                  <tr key={item.id}>
-                    <td><span className="case-id">{item.id || "—"}</span></td>
-                    <td><strong className="case-title">{item.title || "Untitled case"}</strong></td>
-                    <td>{item.assignedInvestigator || "Unassigned"}</td>
-                    <td><StatusBadge status={item.status} /></td>
-                    <td>{formatDate(item.createdAt)}</td>
-                    <td>{formatDate(item.updatedAt)}</td>
-                  </tr>
-                ))}
+                {filteredCases.map((item) => {
+                  const target = encodeURIComponent(item.caseNumber ?? item.id);
+                  return (
+                    <tr key={item.id}>
+                      <td><Link className="case-id case-title-link mono-cell" to={`/cases/${target}`}>{item.id || "—"}</Link></td>
+                      <td><Link className="case-title case-title-link" to={`/cases/${target}`}>{item.title || "Untitled case"}</Link></td>
+                      <td>{item.assignedInvestigator || "Unassigned"}</td>
+                      <td><StatusBadge status={item.status} /></td>
+                      <td className="mono-cell">{formatDate(item.createdAt)}</td>
+                      <td className="mono-cell">{formatDate(item.updatedAt)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+          <div className="mobile-card-list">
+            {filteredCases.map((item) => {
+              const target = encodeURIComponent(item.caseNumber ?? item.id);
+              return (
+                <article className="mobile-data-card" key={item.id}>
+                  <div className="mobile-card-top">
+                    <Link className="case-id case-title-link mono-cell" to={`/cases/${target}`}>{item.id}</Link>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <Link className="case-title case-title-link" to={`/cases/${target}`}>{item.title || "Untitled case"}</Link>
+                  <p className="mobile-card-meta">
+                    {item.assignedInvestigator || "Unassigned"} · Updated {formatDate(item.updatedAt)}
+                  </p>
+                </article>
+              );
+            })}
           </div>
           <div className="panel-footnote">Showing {filteredCases.length} of {cases.length} returned case records.</div>
         </>
@@ -166,8 +187,9 @@ const eventTypes = [
 export function ActivityTimelinePanel({ events, query, loading }) {
   const [typeFilter, setTypeFilter] = useState("All event types");
   const filteredEvents = useMemo(() => events.filter((event) => {
+    const linkedCase = event.caseNumber || event.caseId || "";
     const matchesType = typeFilter === "All event types" || event.eventType === typeFilter;
-    const searchable = `${event.description} ${event.sourceEvidence} ${event.caseId}`.toLowerCase();
+    const searchable = `${event.description} ${event.sourceEvidence} ${linkedCase}`.toLowerCase();
     return matchesType && searchable.includes(query.trim().toLowerCase());
   }), [events, query, typeFilter]);
 
@@ -194,30 +216,39 @@ export function ActivityTimelinePanel({ events, query, loading }) {
         />
       ) : (
         <div className="timeline-list">
-          {filteredEvents.map((event) => (
-            <article className="timeline-event" key={event.id}>
-              <span className={`timeline-marker${event.recordType === "Analytical finding" ? " marker-finding" : ""}`} />
-              <div className="timeline-event-main">
-                <div className="timeline-event-heading">
-                  <span className="event-type">{event.eventType || "Unspecified event"}</span>
-                  <span className={`record-kind${event.recordType === "Analytical finding" ? " record-finding" : ""}`}>
-                    {event.recordType === "Analytical finding"
-                      ? "Analytical finding"
-                      : event.recordType === "Recorded fact"
-                        ? "Recorded fact"
-                        : "Record type not reported"}
-                  </span>
+          {filteredEvents.map((event) => {
+            const linkedCase = event.caseNumber || event.caseId;
+            return (
+              <article className="timeline-event" key={event.id}>
+                <span className={`timeline-marker${event.recordType === "Analytical finding" ? " marker-finding" : ""}`} />
+                <div className="timeline-event-main">
+                  <div className="timeline-event-heading">
+                    <span className="event-type">{event.eventType || "Unspecified event"}</span>
+                    <span className={`record-kind${event.recordType === "Analytical finding" ? " record-finding" : ""}`}>
+                      {event.recordType === "Analytical finding"
+                        ? "Analytical finding"
+                        : event.recordType === "Recorded fact"
+                          ? "Recorded fact"
+                          : "Record type not reported"}
+                    </span>
+                  </div>
+                  <p>{event.description || "No event description returned."}</p>
+                  <div className="event-metadata">
+                    <span><Icon name="evidence" size={13} />{event.sourceEvidence || "Source not specified"}</span>
+                    {linkedCase ? (
+                      <Link className="case-id case-title-link" to={`/cases/${encodeURIComponent(linkedCase)}`}>
+                        <Icon name="cases" size={13} /> {linkedCase}
+                      </Link>
+                    ) : (
+                      <span><Icon name="cases" size={13} />No case linked</span>
+                    )}
+                    <span className="analysis-status">{event.analysisStatus || "Status not reported"}</span>
+                  </div>
                 </div>
-                <p>{event.description || "No event description returned."}</p>
-                <div className="event-metadata">
-                  <span><Icon name="evidence" size={13} />{event.sourceEvidence || "Source not specified"}</span>
-                  <span><Icon name="cases" size={13} />{event.caseId || "No case linked"}</span>
-                  <span className="analysis-status">{event.analysisStatus || "Status not reported"}</span>
-                </div>
-              </div>
-              <time dateTime={event.occurredAt || undefined}>{formatDateTime(event.occurredAt)}</time>
-            </article>
-          ))}
+                <time dateTime={event.occurredAt || undefined}>{formatDateTime(event.occurredAt)}</time>
+              </article>
+            );
+          })}
         </div>
       )}
     </section>
